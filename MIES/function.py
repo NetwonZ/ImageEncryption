@@ -155,6 +155,8 @@ def combin2bigimg(PIES:list,number_block_w:int):
     Returns:
         ndarray: 拼接后的大图
     """
+    #git test
+    #git change
     if len(PIES) % number_block_w != 0:
         raise ValueError("块数无法整除，不行完整拼接")
 
