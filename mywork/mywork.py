@@ -1,284 +1,472 @@
-"""One-dimensional chaotic system based on a sinusoidal-cosine map.
-
-Given formula:
-f(x) = |sin((A + B*mu) * (4/(a-0.5) * cos(pi*x)))|
-"""
-
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Union
+from pathlib import Path
 
 import numpy as np
 import sympy as sp
+from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 
-Number = Union[int, float, np.number]
-ArrayInput = Union[Number, np.ndarray]
-MapExprBuilder = Callable[[sp.Symbol, dict[str, sp.Symbol]], sp.Expr]
+class CMLSystem:
+	"""Coupled map lattice system based on the provided research formula."""
 
+	def __init__(self, L: int, params: dict[str, float], initstate: dict[str, np.ndarray | float]) -> None:
+		self.L = int(L)
+		self.mu = float(params["mu"])
+		self.lam = float(params["lam"])
+		self.a = float(params["a"])
+		self.b = float(params["b"])
+		self.xi = int(params["xi"])
+		self.eta = int(params["eta"])
+		self.x0 = initstate["x0"]
+		self.z0 = initstate["z0"]
+		self.original_params = params.copy()
 
-class Chaotic1DSystem:
-	"""A configurable 1D chaotic map system with automatic differentiation."""
+		# Follow the note in your formula description.
+		if self.xi == 0:
+			self.eta = self.L
+		if self.eta == 0:
+			self.xi = self.L
 
-	def __init__(
+		self._build_symbolic_functions()
+		self._build_neighbor_indices()
+
+	def _build_symbolic_functions(self) -> None:
+		x = sp.Symbol("x", real=True)
+		mu = sp.Symbol("mu", real=True)
+		lam = sp.Symbol("lam", real=True)
+		a = sp.Symbol("a", real=True)
+		b = sp.Symbol("b", real=True)
+
+		f_expr = sp.Abs(sp.sin((5 + 3 * mu) * (1 - (a * x * sp.sin(15 * sp.pi * x * (1 - x))))))
+		g_expr = sp.Abs(sp.sin((5 + 3 * lam) * (1 - (b * x * sp.sin(15 * sp.pi * x * (1 - x))))))
+
+		f_diff_expr = sp.diff(f_expr, x)
+
+		self._f = sp.lambdify((x, mu, a), f_expr, modules="numpy")
+		self._g = sp.lambdify((x, lam, b), g_expr, modules="numpy")
+		self._f_diff = sp.lambdify((x, mu, a), f_diff_expr, modules="numpy")
+
+	def _build_neighbor_indices(self) -> None:
+		# 非相邻耦合
+		# i = np.arange(self.L, dtype=int)
+		# p = ((1 + self.xi) * i) % self.L
+		# q = ((self.eta + self.xi * self.eta + 1) * i) % self.L
+		# self._p_idx = p.astype(int)
+		# self._q_idx = q.astype(int)
+  
+		# 相邻耦合
+		idx = np.arange(self.L, dtype=int)
+		self._p_idx = np.roll(idx,1)
+		self._q_idx = np.roll(idx,-1)
+
+	def _reset_params(self) -> None:
+		for key, value in self.original_params.items():
+			setattr(self, key, float(value))
+		self._sync_index_rule()
+
+	def f(self, x: np.ndarray | float) -> np.ndarray | float:
+		return self._f(x, self.mu, self.a)
+
+	def g(self, z: float) -> float:
+		return float(self._g(z, self.lam, self.b))
+
+	def _f_prime(self, x: np.ndarray) -> np.ndarray:
+		return np.asarray(self._f_diff(x, self.mu, self.a), dtype=float)
+
+	def step(self, x: np.ndarray, z: float) -> tuple[np.ndarray, float]:
+		x = np.asarray(x, dtype=float)
+		g_z = self.g(z)
+		fx = np.asarray(self.f(x), dtype=float)
+
+		x_next = (1.0 - g_z) * fx + (g_z / 2.0) * (fx[self._p_idx] + fx[self._q_idx])
+		x_next = np.mod(x_next, 1.0)
+
+		z_next = np.mod(g_z, 1.0)
+		return x_next, float(z_next)
+
+	def iterate(self, x0: np.ndarray, z0: float, steps: int, discard: int = 0) -> tuple[np.ndarray, float]:
+		x = np.asarray(x0, dtype=float).copy()
+		z = float(z0)
+
+		for _ in range(discard + steps):
+			x, z = self.step(x, z)
+
+		return x, z
+
+	def _jacobian_x(self, x: np.ndarray, z: float) -> np.ndarray:
+		g_z = self.g(z)
+		fp = self._f_prime(x)
+
+		J = np.zeros((self.L, self.L), dtype=float)
+		coef_center = 1.0 - g_z
+		coef_neighbor = g_z / 2.0
+
+        # method1: loop
+		for i in range(self.L):
+			J[i, i] += coef_center * fp[i]
+			p = self._p_idx[i]
+			q = self._q_idx[i]
+			J[i, p] += coef_neighbor * fp[p]
+			J[i, q] += coef_neighbor * fp[q]
+		# method2: vectorized (but may be less clear)
+# 		idx = np.arange(self.L, dtype=int)
+# 		J = np.zeros((self.L, self.L), dtype=float)
+# 
+# 		np.add.at(J, (idx, idx), coef_center * fp)
+# 		np.add.at(J, (idx, self._p_idx), coef_neighbor * fp[self._p_idx])
+# 		np.add.at(J, (idx, self._q_idx), coef_neighbor * fp[self._q_idx])
+   
+
+		return J
+
+	def lyapunov_spectrum(
 		self,
-		params: dict[str, float],
-		map_expr_builder: MapExprBuilder | None = None,
-	) -> None:
-		if not isinstance(params, dict) or len(params) == 0:
-			raise ValueError("'params' must be a non-empty dictionary of parameter values.")
-
-		self.params = {name: float(value) for name, value in params.items()}
-		self._param_order = list(self.params.keys())
-		self._map_expr_builder = map_expr_builder or self._default_map_expr
-		self._uses_default_map = map_expr_builder is None
-
-		self._compile_symbolic_system()
-
-	@staticmethod
-	def _default_map_expr(x: sp.Symbol, p: dict[str, sp.Symbol]) -> sp.Expr:
-		required = {"A", "B", "mu", "a"}
-		missing = required - set(p)
-		if missing:
-			raise ValueError(f"Default map requires params keys: {sorted(required)}. Missing: {sorted(missing)}")
-
-		return sp.Abs(
-			sp.sin(
-				(p["A"] + p["B"] * p["mu"]) * ((sp.Integer(4) / (p["a"] - sp.Rational(1, 2))) * sp.cos(sp.pi * x))
-			)
-		)
-
-	def _compile_symbolic_system(self) -> None:
-		self._x_symbol = sp.Symbol("x", real=True)
-		self._param_symbols = {name: sp.Symbol(name, real=True) for name in self._param_order}
-
-		expr = self._map_expr_builder(self._x_symbol, self._param_symbols)
-		if not isinstance(expr, sp.Expr):
-			raise TypeError("'map_expr_builder' must return a SymPy expression.")
-
-		expected_symbols = {self._x_symbol, *self._param_symbols.values()}
-		extra_symbols = expr.free_symbols - expected_symbols
-		if extra_symbols:
-			raise ValueError(f"Expression has unknown symbols: {sorted(str(s) for s in extra_symbols)}")
-
-		self._map_expr = expr
-		self._diff_expr = sp.diff(self._map_expr, self._x_symbol)
-
-		arg_symbols = [self._x_symbol] + [self._param_symbols[name] for name in self._param_order]
-		self._map_callable = sp.lambdify(arg_symbols, self._map_expr, modules="numpy")
-		self._diff_callable = sp.lambdify(arg_symbols, self._diff_expr, modules="numpy")
-
-	def set_map_relation(self, map_expr_builder: MapExprBuilder, params: dict[str, float] | None = None) -> None:
-		"""Replace f(x) relation and optionally refresh parameters."""
-		if params is not None:
-			if not isinstance(params, dict) or len(params) == 0:
-				raise ValueError("'params' must be a non-empty dictionary of parameter values.")
-			self.params = {name: float(value) for name, value in params.items()}
-			self._param_order = list(self.params.keys())
-
-		self._map_expr_builder = map_expr_builder
-		self._uses_default_map = False
-		self._compile_symbolic_system()
-
-	def _evaluate_map(self, x: ArrayInput) -> np.ndarray:
-		param_values = [self.params[name] for name in self._param_order]
-		return np.asarray(self._map_callable(x, *param_values), dtype=float)
-
-	def _evaluate_diff(self, x: Number) -> float:
-		param_values = [self.params[name] for name in self._param_order]
-		derivative = self._diff_callable(float(x), *param_values)
-		return float(np.abs(derivative))
-
-	def _validate_default_singularity(self) -> None:
-		if self._uses_default_map and np.isclose(self.params.get("a", np.nan), 0.5):
-			raise ValueError("Parameter 'a' cannot be 0.5 for the default map because of division by zero.")
-
-	def map_value(self, x: ArrayInput) -> Union[float, np.ndarray]:
-		"""Evaluate one iteration of the chaotic map.
-
-		Args:
-			x: Scalar or NumPy array input.
-
-		Returns:
-			Scalar float for scalar input, ndarray for array input.
-		"""
-		self._validate_default_singularity()
-
-		x_array = np.asarray(x, dtype=float)
-		mapped = self._evaluate_map(x_array)
-
-		if np.isscalar(x) or x_array.ndim == 0:
-			return float(mapped)
-		return mapped
-
-	def _abs_derivative(self, x: Number) -> float:
-		"""Return |f'(x)| from symbolic auto-differentiation."""
-		self._validate_default_singularity()
-		return self._evaluate_diff(x)
-
-	def generate_sequence(self, x0: Number, n: int, include_x0: bool = False) -> np.ndarray:
-		"""Generate a chaotic sequence by iterative mapping.
-
-		Args:
-			x0: Initial scalar value.
-			n: Number of iterations to generate.
-			include_x0: If True, prepend x0 to the output sequence.
-
-		Returns:
-			NumPy array of generated values.
-		"""
-		if not isinstance(n, int):
-			raise TypeError("'n' must be an integer.")
-		if n <= 0:
-			raise ValueError("'n' must be a positive integer.")
-
-		x0_array = np.asarray(x0)
-		if x0_array.ndim != 0:
-			raise TypeError("'x0' must be a scalar value.")
-
-		values = []
-		current = float(x0)
-
-		if include_x0:
-			values.append(current)
-
-		for _ in range(n):
-			current = float(self.map_value(current))
-			values.append(current)
-
-		return np.asarray(values, dtype=float)
-
-	def lyapunov_exponent(self, x0: Number, n: int, discard: int = 100, epsilon: float = 1e-12) -> float:
-		"""Estimate Lyapunov exponent for the map orbit starting from x0.
-
-		Lyapunov exponent is estimated by:
-		lambda ~= (1/n) * sum(log(|f'(x_i)|)), i=1..n
-		after discarding initial transient iterations.
-
-		Args:
-			x0: Initial scalar value.
-			n: Number of post-transient iterations used for estimation.
-			discard: Number of initial transient iterations to skip.
-			epsilon: Lower bound for |f'(x)| before log, for numerical stability.
-
-		Returns:
-			Estimated Lyapunov exponent as float.
-		"""
-		if not isinstance(n, int):
-			raise TypeError("'n' must be an integer.")
-		if not isinstance(discard, int):
-			raise TypeError("'discard' must be an integer.")
-		if n <= 0:
-			raise ValueError("'n' must be a positive integer.")
-		if discard < 0:
-			raise ValueError("'discard' must be a non-negative integer.")
-		if epsilon <= 0:
-			raise ValueError("'epsilon' must be positive.")
-
-		x0_array = np.asarray(x0)
-		if x0_array.ndim != 0:
-			raise TypeError("'x0' must be a scalar value.")
-
-		self._validate_default_singularity()
-
-		current = float(x0)
-		total_steps = discard + n
-		log_sum = 0.0
-
-		for step in range(total_steps):
-			if step >= discard:
-				abs_derivative = self._abs_derivative(current)
-				log_sum += float(np.log(max(abs_derivative, epsilon)))
-			current = float(self.map_value(current))
-
-		return log_sum / float(n)
-
-	def lyapunov_parameter_scan(
-		self,
-		parameter: str,
-		values: np.ndarray,
-		x0: Number,
+		x0: np.ndarray,
+		z0: float,
 		n: int,
 		discard: int = 100,
 		epsilon: float = 1e-12,
-	) -> tuple[np.ndarray, np.ndarray]:
-		"""Scan one parameter in params and return Lyapunov curve data.
+	) -> np.ndarray:
+		"""Return full Lyapunov spectrum (length L) in descending order."""
+		x = np.asarray(x0, dtype=float).copy()
+		z = float(z0)
+
+		Q = np.eye(self.L, dtype=float)
+		log_sum = np.zeros(self.L, dtype=float)
+
+		total_steps = discard + n
+		for step_idx in range(total_steps):
+			J = self._jacobian_x(x, z)
+			Z = J @ Q
+			Q, R = np.linalg.qr(Z)
+
+			if step_idx >= discard:
+				d = np.abs(np.diag(R))
+				log_sum += np.log(d + epsilon)
+
+			x, z = self.step(x, z)
+
+		spectrum = log_sum / float(n)
+		return np.sort(spectrum)[::-1]
+
+	@staticmethod
+	def ked_keb(spectrum: np.ndarray) -> tuple[float, float]:
+		"""Compute KED and KEB from one Lyapunov spectrum vector.
 
 		Args:
-			parameter: Key in self.params to scan.
-			values: 1D NumPy array of parameter values to scan.
-			x0: Initial scalar value for orbit.
-			n: Number of post-transient iterations per scan point.
-			discard: Number of transient iterations to skip per point.
-			epsilon: Lower bound for |f'(x)| before log.
+			spectrum: 1D array, e.g. spectra[i, j, :] with length L.
 
 		Returns:
-			A tuple (param_values, lyapunov_values), both 1D arrays.
-		"""
-		if parameter not in self.params:
-			raise ValueError(f"Unknown parameter '{parameter}'. Available keys: {self._param_order}")
+			(ked, keb)
+		 """
+		lam = np.asarray(spectrum, dtype=float).reshape(-1)
+		positive = lam[lam > 0.0]
+		N = lam.size
 
-		param_values = np.asarray(values, dtype=float)
-		if param_values.ndim != 1:
-			raise TypeError("'values' must be a 1D array.")
-		if param_values.size == 0:
-			raise ValueError("'values' must not be empty.")
+		ked = float(np.sum(positive) / N)
+		keb = float(positive.size / N)
+		return ked, keb
 
-		original_value = float(self.params[parameter])
-		lyap_values = np.empty_like(param_values, dtype=float)
+	def _set_param_value(self, name: str, value: float) -> None:
+		if name in ("xi", "eta"):
+			setattr(self, name, int(value))
+		else:
+			setattr(self, name, float(value))
 
-		try:
-			for idx, param in enumerate(param_values):
-				param_float = float(param)
-				self.params[parameter] = param_float
-				try:
-					lyap_values[idx] = self.lyapunov_exponent(
+	def _sync_index_rule(self) -> None:
+		if self.xi == 0:
+			self.eta = self.L
+		if self.eta == 0:
+			self.xi = self.L
+		self._build_neighbor_indices()
+
+	def lyap_scan(
+		self,
+		param1: str,
+		values1: np.ndarray,
+		param2: str,
+		values2: np.ndarray,
+		x0: np.ndarray,
+		z0: float,
+		n: int,
+		discard: int = 100,
+		epsilon: float = 1e-12,
+		save_path: str = "mywork/output/cml_lyapunov_scan.npz",
+	) -> np.ndarray:
+		"""Scan two parameters and save all Lyapunov spectra for every combination.
+
+		Returns:
+			spectra: shape = (len(values1), len(values2), L)
+		 """
+		path = Path(save_path)
+		path.parent.mkdir(parents=True, exist_ok=True)
+
+		if path.exists():
+			print(f"[scan] File already exists: {path}")
+			while True:
+				choice = input("Choose action: [s]kip / [d]elete and rescan: ").strip().lower()
+				if choice in ("s", "skip"):
+					print("[scan] Skip current scan. Loading existing spectra from file.")
+					with np.load(path) as existing:
+						if "spectra" not in existing:
+							raise KeyError(f"'spectra' not found in existing file: {path}")
+						return np.asarray(existing["spectra"], dtype=float)
+				if choice in ("d", "delete"):
+					path.unlink()
+					print("[scan] Existing file deleted. Start new scan.")
+					break
+				print("Invalid input. Please type 's' or 'd'.")
+
+		v1 = np.asarray(values1, dtype=float)
+		v2 = np.asarray(values2, dtype=float)
+		spectra = np.empty((v1.size, v2.size, self.L), dtype=float)
+
+		original = {
+			"mu": self.mu,
+			"lam": self.lam,
+			"a": self.a,
+			"b": self.b,
+			"xi": self.xi,
+			"eta": self.eta,
+		}
+		ked = np.empty((v1.size, v2.size), dtype=float)
+		keb = np.empty((v1.size, v2.size), dtype=float)
+
+		total = int(v1.size * v2.size)
+		with Progress(
+			TextColumn("[bold cyan]{task.description}"),
+			BarColumn(),
+			TaskProgressColumn(),
+			TimeElapsedColumn(),
+			TimeRemainingColumn(),
+		) as progress:
+			task = progress.add_task(f"Scanning {param1} x {param2}", total=total)
+			for i, p1 in enumerate(v1):
+				for j, p2 in enumerate(v2):
+					self._set_param_value(param1, float(p1))
+					self._set_param_value(param2, float(p2))
+					self._sync_index_rule()
+					spectra[i, j, :] = self.lyapunov_spectrum(
 						x0=x0,
+						z0=z0,
 						n=n,
 						discard=discard,
 						epsilon=epsilon,
 					)
-				except (ValueError, ZeroDivisionError, FloatingPointError, OverflowError):
-					lyap_values[idx] = np.nan
-		finally:
-			self.params[parameter] = original_value
+					ked_, keb_ = self.ked_keb(spectra[i, j, :])
+					ked[i, j] = ked_
+					keb[i, j] = keb_
+					progress.update(task, advance=1)
 
-		#sym:lyapunov_parameter_scan
-		try:
-			import matplotlib.pyplot as plt
-		except ImportError as exc:
-			raise ImportError("matplotlib is required for plotting. Install it via: pip install matplotlib") from exc
 
-		plt.figure(figsize=(8, 4.5))
-		plt.plot(param_values, lyap_values, color="tab:blue", linewidth=1.2)
-		plt.axhline(0.0, color="tab:red", linestyle="--", linewidth=1.0)
-		plt.xlabel(f"Scanned parameter: {parameter}")
-		plt.ylabel("Lyapunov exponent")
-		plt.title(f"Lyapunov exponent curve vs {parameter}")
-		plt.grid(True, alpha=0.3)
+		for key, value in original.items():
+			setattr(self, key, value)
+		self._sync_index_rule()
+
+		np.savez_compressed(
+			path,
+			spectra=spectra,
+			ked=ked,
+			keb=keb,
+   			param1_name=param1,
+			param2_name=param2,
+			param1_values=v1,
+			param2_values=v2,
+		)
+		return spectra
+
+	def plot_ked_keb(self, data_path: str) -> None:
+
+		"""Load saved scan data and plot KED/KEB 3D surfaces."""
+		import matplotlib.pyplot as plt
+
+		data = np.load(data_path)
+		ked = np.asarray(data["ked"], dtype=float)
+		keb = np.asarray(data["keb"], dtype=float)
+		v1 = np.asarray(data["param1_values"], dtype=float)
+		v2 = np.asarray(data["param2_values"], dtype=float)
+
+		p1_name = str(data["param1_name"])
+		p2_name = str(data["param2_name"])
+
+		X, Y = np.meshgrid(v1, v2, indexing="ij")
+		ked_max = float(np.nanmax(ked)) if ked.size else 0.0
+		if not np.isfinite(ked_max) or ked_max <= 0.0:
+			ked_max = 1e-12
+
+		fig = plt.figure(figsize=(14, 6))
+
+		ax1 = fig.add_subplot(1, 2, 1, projection="3d")
+		surf1 = ax1.plot_surface(X, Y, ked, cmap="viridis", linewidth=0, antialiased=True)
+		ax1.set_title("KED 3D Surface")
+		ax1.set_xlabel(p1_name)
+		ax1.set_ylabel(p2_name)
+		ax1.set_zlabel("KED")
+		ax1.set_zlim(0.0, ked_max)
+		fig.colorbar(surf1, ax=ax1, shrink=0.65, pad=0.08)
+
+		ax2 = fig.add_subplot(1, 2, 2, projection="3d")
+		surf2 = ax2.plot_surface(X, Y, keb, cmap="plasma", linewidth=0, antialiased=True)
+		ax2.set_title("KEB 3D Surface")
+		ax2.set_xlabel(p1_name)
+		ax2.set_ylabel(p2_name)
+		ax2.set_zlabel("KEB")
+		ax2.set_zlim(0.0, 1.2)
+		fig.colorbar(surf2, ax=ax2, shrink=0.65, pad=0.08)
+
 		plt.tight_layout()
 		plt.show()
 
-		return param_values, lyap_values
+	def generate_random_bits_file(
+    self,
+    n_bits: int,
+    save_path: str = "mywork/output/cml_random.bin",
+    x0: np.ndarray | None = None,
+    z0: float | None = None,
+    warmup: int = 200,
+    threshold: float = 0.5,
+    channel_index: int = 0,
+    bitorder: str = "little",
+    seed: int | None = None,
+) -> Path:
+
+
+		path = Path(save_path)
+		path.parent.mkdir(parents=True, exist_ok=True)
+
+		if path.exists():
+			print(f"[prng] File already exists: {path}")
+			while True:
+				choice = input("Choose action: [s]kip / [d]elete and regenerate: ").strip().lower()
+				if choice in ("s", "skip"):
+					print("[prng] Skip generation and keep existing file.")
+					return path
+				if choice in ("d", "delete"):
+					path.unlink()
+					print("[prng] Existing file deleted. Start generating.")
+					break
+				print("Invalid input. Please type 's' or 'd'.")
+
+		print(f"当前的参数设置：{self.params}")
+		rng = np.random.default_rng(seed)
+
+		if x0 is None or z0 is None:
+			raise ValueError("Both x0 and z0 must be provided as initial conditions for the CML system.")
+		# Burn-in to reduce initial transient effect.
+		x = np.asarray(x0, dtype=float).copy()
+		z = float(z0)
+		for _ in range(max(0, int(warmup))):
+			x, z = self.step(x, z)
+
+		idx = int(channel_index) % self.L
+		bits = np.empty(n_bits, dtype=np.uint8)
+
+		for i in range(n_bits):
+			x, z = self.step(x, z)
+			bits[i] = 1 if x[idx] >= threshold else 0
+
+		# Pack bits to bytes and write binary file.
+		pad = (-n_bits) % 8
+		if pad:
+			bits = np.pad(bits, (0, pad), mode="constant", constant_values=0)
+
+		packed = np.packbits(bits, bitorder=bitorder)
+		path.write_bytes(packed.tobytes())
+
+		print(f"[rng] Generated {n_bits} bits -> {packed.size} bytes")
+		print(f"[rng] Saved to: {path}")
+		return path
+
+	def vis_states(self,x0,z0,x1,z1,lat_index,steps,view = True):
+		x = np.asarray(x0, dtype=float).copy()
+		z = float(z0)
+		x_ = np.asarray(x1, dtype=float).copy()
+		z_ = float(z1)
+		states = np.empty((steps, self.L), dtype=float)
+		states_ = np.empty((steps, self.L), dtype=float)
+		for i in range(steps):
+			states[i, :] = x
+			states_[i, :] = x_
+			x, z = self.step(x, z)
+			x_, z_ = self.step(x_, z_)
+		import matplotlib.pyplot as plt
+		#将两个不同初始状态下的	lat_index位置绘制在同一张图上，展示它们的演化轨迹
+		if view:
+			print("drawing states...")
+			plt.figure(figsize=(10, 6))
+			plt.plot(states[:, lat_index], label="State 1", alpha=0.7)
+			plt.plot(states_[:, lat_index], label="State 2", alpha=0.7)
+			#在额外绘制一条线，表示两个状态的差值的绝对值，展示它们的分叉情况
+			diff = np.abs(states[:, lat_index] - states_[:, lat_index])
+			plt.plot(diff, label="Absolute Difference", color="red", linestyle="--", alpha=0.7)
+			plt.title(f"Evolution of Lattice Index {lat_index}")
+			plt.xlabel("Time Step")
+			plt.ylabel("State Value")	
+			plt.legend()
+			plt.grid()
+			plt.tight_layout()
+			plt.show()
+		return states, states_
+
+  
 
 
 if __name__ == "__main__":
+	params = {
+		"mu": 5,
+		"lam": 5,
+		"a": 3.0,
+		"b": 5.0,
+		"xi": 1,
+		"eta": 1,
+	}
+ 
+	L = 50
+	x0 = np.random.rand(L)
+	z0 = 0.37
+ 
+	sys = CMLSystem(L=L, params=params, initstate={"x0": np.random.rand(L), "z0": 0.37})
 
 
-	def logistic_map(x: sp.Symbol, p: dict[str, sp.Symbol]) -> sp.Expr:
-		return p["r"] * x * (1 - x)
-
-
-	system_logistic = Chaotic1DSystem(params={"r": 3.6}, map_expr_builder=logistic_map)
-	r_values = np.linspace(2.8, 4.0, 160)
-	scan_r, scan_lyap_r = system_logistic.lyapunov_parameter_scan(
-		parameter="r",
-		values=r_values,
-		x0=0.123456,
-		n=3000,
-		discard=1000,
+ 
+	# sys.lyap_scan(
+	# 	param1="mu",
+	# 	values1=np.linspace(0, 5, 10),
+	# 	param2="lam",
+	# 	values2=np.linspace(0, 5, 10),
+	# 	x0=x0,
+	# 	z0=z0,
+	# 	n=200,
+	# 	discard=100,
+	# 	save_path="mywork/output/cml_lyapunov_scan.npz",
+	# )
+	# sys.plot_ked_keb("mywork/output/cml_lyapunov_scan.npz")
+ 
+ 	#将x0d的第一位加上0.001，得到x1d，其他参数保持不变，观察它们的演化轨迹是否相似
+	x0_ = x0.copy()
+	x0_[11] += 0.001
+	# sys.vis_states(
+	# 	x0=x0,
+	# 	z0=0.37,
+	# 	x1=x0_,
+	# 	z1=0.37,
+	# 	lat_index=40,
+	# 	steps=200,
+	# )
+ 
+	# s,_ = sys.vis_states(x0=x0,z0=0.37,x1=x0_,z1=0.37,lat_index=40,steps=10000,view=False)
+	# #将s保存成csv在本地用于数据分析
+	# np.savetxt("mywork/output/cml_states.csv", s, delimiter=",")
+ 
+	sys.generate_random_bits_file(
+		n_bits=1000,
+		save_path="mywork/output/cml_random.bin",
+		x0=x0,
+		z0=z0,	
+		warmup=200,
+		threshold=0.6375493986616645,
+		channel_index=0,
+		bitorder="little",	
+		seed=42,
 	)
-	print("Logistic scan [r, lyapunov] =")
-	print(np.column_stack((scan_r, scan_lyap_r)))
-	pass
