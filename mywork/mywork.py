@@ -6,7 +6,6 @@ import numpy as np
 import sympy as sp
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
-
 class CMLSystem:
 	"""Coupled map lattice system based on the provided research formula."""
 
@@ -21,6 +20,7 @@ class CMLSystem:
 		self.x0 = initstate["x0"]
 		self.z0 = initstate["z0"]
 		self.original_params = params.copy()
+
 
 		# Follow the note in your formula description.
 		if self.xi == 0:
@@ -49,21 +49,26 @@ class CMLSystem:
 
 	def _build_neighbor_indices(self) -> None:
 		# 非相邻耦合
-		# i = np.arange(self.L, dtype=int)
-		# p = ((1 + self.xi) * i) % self.L
-		# q = ((self.eta + self.xi * self.eta + 1) * i) % self.L
-		# self._p_idx = p.astype(int)
-		# self._q_idx = q.astype(int)
+		i = np.arange(self.L, dtype=int)
+		p = ((1 + self.xi) * i) % self.L
+		q = ((self.eta + self.xi * self.eta + 1) * i) % self.L
+		self._p_idx = p.astype(int)
+		self._q_idx = q.astype(int)
   
 		# 相邻耦合
-		idx = np.arange(self.L, dtype=int)
-		self._p_idx = np.roll(idx,1)
-		self._q_idx = np.roll(idx,-1)
+		# idx = np.arange(self.L, dtype=int)
+		# self._p_idx = np.roll(idx,1)
+		# self._q_idx = np.roll(idx,-1)
 
 	def _reset_params(self) -> None:
 		for key, value in self.original_params.items():
 			setattr(self, key, float(value))
 		self._sync_index_rule()
+
+	def _show_params(self) -> None:
+		print("Current parameters:")
+		for key in ["mu", "lam", "a", "b", "xi", "eta"]:
+			print(f"  {key}: {getattr(self, key)}")
 
 	def f(self, x: np.ndarray | float) -> np.ndarray | float:
 		return self._f(x, self.mu, self.a)
@@ -348,7 +353,7 @@ class CMLSystem:
 					break
 				print("Invalid input. Please type 's' or 'd'.")
 
-		print(f"当前的参数设置：{self.params}")
+		print(f"当前的参数设置：{self._show_params()}")
 		rng = np.random.default_rng(seed)
 
 		if x0 is None or z0 is None:
@@ -359,13 +364,34 @@ class CMLSystem:
 		for _ in range(max(0, int(warmup))):
 			x, z = self.step(x, z)
 
-		idx = int(channel_index) % self.L
-		bits = np.empty(n_bits, dtype=np.uint8)
 
-		for i in range(n_bits):
+
+		steps = (n_bits + self.L - 1) // self.L
+		bits = np.empty(steps * self.L, dtype=np.uint8)
+		pos = 0
+		onecount = 0
+		zerocout = 0
+  
+		# output = np.empty((steps, self.L), dtype=np.float32)
+  
+		for i in range(steps):
 			x, z = self.step(x, z)
-			bits[i] = 1 if x[idx] >= threshold else 0
-
+   
+			# output[i, :] = x.astype(np.float32)
+   
+			row_bits = (x >= threshold).astype(np.uint8)   # 一次拿 L 个 bit
+			onecount += np.sum(row_bits)
+			zerocout += np.sum(1 - row_bits)
+			bits[pos:pos + self.L] = row_bits	
+			pos += self.L
+			if i%1000 == 0:
+				print(f"[rng] Step {i}/{steps} - Generated {pos} bits so far...")
+		print(f"[rng] Total ones: {onecount}, Total zeros: {zerocout}, Ratio: {onecount/(zerocout+1e-12):.4f}")
+		bits = bits[:n_bits]
+  
+		#将output保存成csv在本地用于数据分析
+		# np.savetxt("mywork/output/cml_random_output.csv", output, delimiter=",")
+  
 		# Pack bits to bytes and write binary file.
 		pad = (-n_bits) % 8
 		if pad:
@@ -409,15 +435,95 @@ class CMLSystem:
 			plt.show()
 		return states, states_
 
-  
+	def Bifurcation_diagram(
+		self,
+		x0,
+		z0,
+		lattice_index,
+		param_name,
+		param_range,
+		steps=2000,
+		discard=1000,
+	):
+		import matplotlib.pyplot as plt
 
+		if not hasattr(self, param_name):
+			raise ValueError(f"Unknown parameter: {param_name}")
+		if not (0 <= int(lattice_index) < self.L):
+			raise ValueError(f"lattice_index must be in [0, {self.L - 1}]")
+		if steps <= 0:
+			raise ValueError("steps must be > 0")
+		if discard < 0:
+			raise ValueError("discard must be >= 0")
+		x0 = np.asarray(x0, dtype=float).copy()
+		z0 = float(z0)
+		if x0.size != self.L:
+			raise ValueError(f"x0 length must equal L={self.L}")
+		param_values = np.asarray(param_range, dtype=float).reshape(-1)
+		if param_values.size == 0:
+			raise ValueError("param_range is empty")
+
+		# 每个参数值收集 steps 个稳态后采样点，用于散点图
+		x_scatter = np.repeat(param_values, steps)
+		y_scatter = np.empty(param_values.size * steps, dtype=float)
+		pos = 0
+
+		with Progress(
+			TextColumn("[bold cyan]{task.description}"),
+			BarColumn(),
+			TaskProgressColumn(),
+			TimeElapsedColumn(),
+			TimeRemainingColumn(),
+		) as progress:
+			task = progress.add_task(
+				f"Bifurcation scan: {param_name}",
+				total=int(param_values.size),
+			)
+
+			for p in param_values:
+				self._set_param_value(param_name, float(p))
+				self._sync_index_rule()
+
+				x = x0.copy()
+				z = z0
+
+				for _ in range(discard):
+					x, z = self.step(x, z)
+
+				for _ in range(steps):
+					x, z = self.step(x, z)
+					y_scatter[pos] = x[int(lattice_index)]
+					pos += 1
+
+				progress.update(task, advance=1)
+
+		# 恢复原始参数，避免影响后续流程
+		self._reset_params()
+
+		plt.figure(figsize=(10, 6))
+		plt.plot(
+			x_scatter,
+			y_scatter,
+			marker=".",
+			linestyle="",
+			markersize=1.0,
+			alpha=0.35,
+		)
+		plt.title(f"Bifurcation Diagram for {param_name} at Lattice Index {lattice_index}")
+		plt.xlabel(param_name)
+		plt.ylabel(f"State at Index {lattice_index}")
+		plt.grid(True, alpha=0.3)
+		plt.tight_layout()
+		plt.show()
+
+		return x_scatter, y_scatter
 
 if __name__ == "__main__":
 	params = {
 		"mu": 5,
 		"lam": 5,
-		"a": 3.0,
-		"b": 5.0,
+		"a": 100,
+		"b": 200,
 		"xi": 1,
 		"eta": 1,
 	}
@@ -427,7 +533,6 @@ if __name__ == "__main__":
 	z0 = 0.37
  
 	sys = CMLSystem(L=L, params=params, initstate={"x0": np.random.rand(L), "z0": 0.37})
-
 
  
 	# sys.lyap_scan(
@@ -444,29 +549,40 @@ if __name__ == "__main__":
 	# sys.plot_ked_keb("mywork/output/cml_lyapunov_scan.npz")
  
  	#将x0d的第一位加上0.001，得到x1d，其他参数保持不变，观察它们的演化轨迹是否相似
-	x0_ = x0.copy()
-	x0_[11] += 0.001
+	# x0_ = x0.copy()
+	# x0_[11] += 0.001
 	# sys.vis_states(
 	# 	x0=x0,
 	# 	z0=0.37,
-	# 	x1=x0_,
+	# 	x1=x0,
 	# 	z1=0.37,
 	# 	lat_index=40,
-	# 	steps=200,
+	# 	steps=20000,
 	# )
- 
 	# s,_ = sys.vis_states(x0=x0,z0=0.37,x1=x0_,z1=0.37,lat_index=40,steps=10000,view=False)
 	# #将s保存成csv在本地用于数据分析
 	# np.savetxt("mywork/output/cml_states.csv", s, delimiter=",")
  
-	sys.generate_random_bits_file(
-		n_bits=1000,
-		save_path="mywork/output/cml_random.bin",
+	# 生成随机数文件
+	# sys.generate_random_bits_file(
+	# 	n_bits=100_000_000,
+	# 	save_path="mywork/output/cml_random.bin",
+	# 	x0=x0,
+	# 	z0=z0,	
+	# 	warmup=2000,
+	# 	threshold=0.6580636203289032,#0.6586409509181976  | 0.6580636203289032
+	# 	channel_index=0,
+	# 	bitorder="little",	
+	# 	seed=42,
+	# )
+
+	#分叉图
+	sys.Bifurcation_diagram(
 		x0=x0,
-		z0=z0,	
-		warmup=200,
-		threshold=0.6375493986616645,
-		channel_index=0,
-		bitorder="little",	
-		seed=42,
+		z0=z0,
+		lattice_index=13,
+		param_name="mu",
+		param_range=np.linspace(0, 5, 400),
+		steps=1000,
+		discard=200,
 	)
