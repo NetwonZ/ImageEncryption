@@ -1,0 +1,8 @@
+__pycache__/
+.vscode/
+image/
+mywork/__pycache__/
+mywork/.vscode/
+mywork/.claude/
+mywork/.idea/
+mywork/output/
