@@ -1,588 +1,137 @@
-from __future__ import annotations
-
-from pathlib import Path
-
 import numpy as np
-import sympy as sp
-from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+import PIL.Image as pil_image
+import matplotlib.pyplot as plt
+from salomon import SalomoncouplingCML
+import time
+
+# demo_1()主要测试将一个图片分解为(24,w,h)的数组，分别对R,G,B通道的高6位进行打乱，检验效果如何
+# 加密方案如下：拿出某一张位平面，随机生成一个(w,h)的随机数矩阵，然后对这个随机数矩阵进行排序得到S。按照这个S的顺序对位平面进行重排，得到加密后的位平面。解密时按照S的顺序对加密后的位平面进行重排。
+# 未参与加密的位平面保持不变，直接放回原来的位置。
+# 结论--效果不错！
+def demo_1():
+    def _image_to_bitplanes(img_arr: np.ndarray) -> np.ndarray:
+        h, w, c = img_arr.shape
+        if c != 3:
+            raise ValueError("Only RGB images are supported")
+
+        bitplanes = np.empty((24, h, w), dtype=np.uint8)
+        plane_idx = 0
+        for channel in range(3):
+            for bit in range(7, -1, -1):
+                bitplanes[plane_idx] = (img_arr[:, :, channel] >> bit) & 1
+                plane_idx += 1
+        return bitplanes
+
+
+    def _bitplanes_to_image(bitplanes: np.ndarray) -> np.ndarray:
+        if bitplanes.shape[0] != 24:
+            raise ValueError("bitplanes shape must be (24, h, w)")
+
+        h, w = bitplanes.shape[1:]
+        img_arr = np.zeros((h, w, 3), dtype=np.uint8)
+        plane_idx = 0
+        for channel in range(3):
+            channel_data = np.zeros((h, w), dtype=np.uint8)
+            for bit in range(7, -1, -1):
+                channel_data |= bitplanes[plane_idx].astype(np.uint8) << bit
+                plane_idx += 1
+            img_arr[:, :, channel] = channel_data
+        return img_arr
+
+
+    def _permute_plane(plane: np.ndarray, order: np.ndarray) -> np.ndarray:
+        flat_plane = plane.reshape(-1)
+        return flat_plane[order].reshape(plane.shape)
+
+
+    def _inverse_permute_plane(plane: np.ndarray, order: np.ndarray) -> np.ndarray:
+        flat_plane = plane.reshape(-1)
+        restored = np.empty_like(flat_plane)
+        restored[order] = flat_plane
+        return restored.reshape(plane.shape)
+
+
+    def _show_demo_results(
+        original: np.ndarray,
+        encrypted: np.ndarray,
+        decrypted: np.ndarray,
+        changed_mask: np.ndarray,
+    ) -> None:
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        axes[0, 0].imshow(original)
+        axes[0, 0].set_title("Original")
+        axes[0, 1].imshow(encrypted)
+        axes[0, 1].set_title("Encrypted (high 6 bits shuffled)")
+        axes[1, 0].imshow(decrypted)
+        axes[1, 0].set_title("Decrypted")
+        axes[1, 1].imshow(changed_mask, cmap="gray")
+        axes[1, 1].set_title("Changed pixels")
+
+        for ax in axes.flat:
+            ax.axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
+    img_pth = r"C:\ImageEncryptionV2\image\img1.png"
+    img = pil_image.open(img_pth).convert("RGB")
+    img_arr = np.asarray(img, dtype=np.uint8)
+
+
+    bitplanes = _image_to_bitplanes(img_arr)
+    encrypted_bitplanes = bitplanes.copy()
+    decrypted_bitplanes = bitplanes.copy()
+
+    h, w = img_arr.shape[:2]
+    L = w*h
+    params = {
+        "mu": 5,
+        "lam": 5,
+        "a": 100,
+        "b": 200,
+        "xi": 1,
+        "eta": 1,
+    }
+    seed = 2026
+    np.random.seed(seed)
+    x0 = np.random.rand(L)
+    z0 = np.random.rand()
+    
+
+    cml = SalomoncouplingCML(L=L, params=params, initstate={"x0": x0, "z0": z0})
+    st = time.time()
+    rand_seq = cml.generate_rdseq(24)
+    rand_seq = rand_seq.T
+    print(f"Random sequence generation took {time.time() - st:.4f} seconds")
+    if rand_seq.shape != (24, h * w):
+        raise ValueError(f"rand_seq shape must be (24, {h * w}), got {rand_seq.shape}")
+
+    encrypted_plane_indices = []
+
+    # 每个通道的高6位分别对应 [0:6]、[8:14]、[16:22]
+    for channel in range(3):
+        base_idx = channel * 8
+        for plane_idx in range(base_idx, base_idx + 6):
+            order = np.argsort(rand_seq[plane_idx], axis=None)
+            encrypted_bitplanes[plane_idx] = _permute_plane(bitplanes[plane_idx], order)
+            decrypted_bitplanes[plane_idx] = _inverse_permute_plane(encrypted_bitplanes[plane_idx], order)
+            encrypted_plane_indices.append(plane_idx)
+
+    encrypted_img = _bitplanes_to_image(encrypted_bitplanes)
+    decrypted_img = _bitplanes_to_image(decrypted_bitplanes)
+
+    decrypt_ok = np.array_equal(img_arr, decrypted_img)
+    changed_mask = np.any(img_arr != encrypted_img, axis=2)
+    changed_ratio = changed_mask.mean()
+
+    print(f"image path: {img_pth}")
+    print(f"image size: {w}x{h}")
+    print(f"encrypted bit planes: {encrypted_plane_indices}")
+    print(f"pixel change ratio after encryption: {changed_ratio:.4%}")
+    print(f"decryption exact recovery: {decrypt_ok}")
+
+    _show_demo_results(img_arr, encrypted_img, decrypted_img, changed_mask)
 
-class CMLSystem:
-	"""Coupled map lattice system based on the provided research formula."""
-
-	def __init__(self, L: int, params: dict[str, float], initstate: dict[str, np.ndarray | float]) -> None:
-		self.L = int(L)
-		self.mu = float(params["mu"])
-		self.lam = float(params["lam"])
-		self.a = float(params["a"])
-		self.b = float(params["b"])
-		self.xi = int(params["xi"])
-		self.eta = int(params["eta"])
-		self.x0 = initstate["x0"]
-		self.z0 = initstate["z0"]
-		self.original_params = params.copy()
-
-
-		# Follow the note in your formula description.
-		if self.xi == 0:
-			self.eta = self.L
-		if self.eta == 0:
-			self.xi = self.L
-
-		self._build_symbolic_functions()
-		self._build_neighbor_indices()
-
-	def _build_symbolic_functions(self) -> None:
-		x = sp.Symbol("x", real=True)
-		mu = sp.Symbol("mu", real=True)
-		lam = sp.Symbol("lam", real=True)
-		a = sp.Symbol("a", real=True)
-		b = sp.Symbol("b", real=True)
-
-		f_expr = sp.Abs(sp.sin((5 + 3 * mu) * (1 - (a * x * sp.sin(15 * sp.pi * x * (1 - x))))))
-		g_expr = sp.Abs(sp.sin((5 + 3 * lam) * (1 - (b * x * sp.sin(15 * sp.pi * x * (1 - x))))))
-
-		f_diff_expr = sp.diff(f_expr, x)
-
-		self._f = sp.lambdify((x, mu, a), f_expr, modules="numpy")
-		self._g = sp.lambdify((x, lam, b), g_expr, modules="numpy")
-		self._f_diff = sp.lambdify((x, mu, a), f_diff_expr, modules="numpy")
-
-	def _build_neighbor_indices(self) -> None:
-		# 非相邻耦合
-		i = np.arange(self.L, dtype=int)
-		p = ((1 + self.xi) * i) % self.L
-		q = ((self.eta + self.xi * self.eta + 1) * i) % self.L
-		self._p_idx = p.astype(int)
-		self._q_idx = q.astype(int)
-  
-		# 相邻耦合
-		# idx = np.arange(self.L, dtype=int)
-		# self._p_idx = np.roll(idx,1)
-		# self._q_idx = np.roll(idx,-1)
-
-	def _reset_params(self) -> None:
-		for key, value in self.original_params.items():
-			setattr(self, key, float(value))
-		self._sync_index_rule()
-
-	def _show_params(self) -> None:
-		print("Current parameters:")
-		for key in ["mu", "lam", "a", "b", "xi", "eta"]:
-			print(f"  {key}: {getattr(self, key)}")
-
-	def f(self, x: np.ndarray | float) -> np.ndarray | float:
-		return self._f(x, self.mu, self.a)
-
-	def g(self, z: float) -> float:
-		return float(self._g(z, self.lam, self.b))
-
-	def _f_prime(self, x: np.ndarray) -> np.ndarray:
-		return np.asarray(self._f_diff(x, self.mu, self.a), dtype=float)
-
-	def step(self, x: np.ndarray, z: float) -> tuple[np.ndarray, float]:
-		x = np.asarray(x, dtype=float)
-		g_z = self.g(z)
-		fx = np.asarray(self.f(x), dtype=float)
-
-		x_next = (1.0 - g_z) * fx + (g_z / 2.0) * (fx[self._p_idx] + fx[self._q_idx])
-		x_next = np.mod(x_next, 1.0)
-
-		z_next = np.mod(g_z, 1.0)
-		return x_next, float(z_next)
-
-	def iterate(self, x0: np.ndarray, z0: float, steps: int, discard: int = 0) -> tuple[np.ndarray, float]:
-		x = np.asarray(x0, dtype=float).copy()
-		z = float(z0)
-
-		for _ in range(discard + steps):
-			x, z = self.step(x, z)
-
-		return x, z
-
-	def _jacobian_x(self, x: np.ndarray, z: float) -> np.ndarray:
-		g_z = self.g(z)
-		fp = self._f_prime(x)
-
-		J = np.zeros((self.L, self.L), dtype=float)
-		coef_center = 1.0 - g_z
-		coef_neighbor = g_z / 2.0
-
-        # method1: loop
-		for i in range(self.L):
-			J[i, i] += coef_center * fp[i]
-			p = self._p_idx[i]
-			q = self._q_idx[i]
-			J[i, p] += coef_neighbor * fp[p]
-			J[i, q] += coef_neighbor * fp[q]
-		# method2: vectorized (but may be less clear)
-# 		idx = np.arange(self.L, dtype=int)
-# 		J = np.zeros((self.L, self.L), dtype=float)
-# 
-# 		np.add.at(J, (idx, idx), coef_center * fp)
-# 		np.add.at(J, (idx, self._p_idx), coef_neighbor * fp[self._p_idx])
-# 		np.add.at(J, (idx, self._q_idx), coef_neighbor * fp[self._q_idx])
-   
-
-		return J
-
-	def lyapunov_spectrum(
-		self,
-		x0: np.ndarray,
-		z0: float,
-		n: int,
-		discard: int = 100,
-		epsilon: float = 1e-12,
-	) -> np.ndarray:
-		"""Return full Lyapunov spectrum (length L) in descending order."""
-		x = np.asarray(x0, dtype=float).copy()
-		z = float(z0)
-
-		Q = np.eye(self.L, dtype=float)
-		log_sum = np.zeros(self.L, dtype=float)
-
-		total_steps = discard + n
-		for step_idx in range(total_steps):
-			J = self._jacobian_x(x, z)
-			Z = J @ Q
-			Q, R = np.linalg.qr(Z)
-
-			if step_idx >= discard:
-				d = np.abs(np.diag(R))
-				log_sum += np.log(d + epsilon)
-
-			x, z = self.step(x, z)
-
-		spectrum = log_sum / float(n)
-		return np.sort(spectrum)[::-1]
-
-	@staticmethod
-	def ked_keb(spectrum: np.ndarray) -> tuple[float, float]:
-		"""Compute KED and KEB from one Lyapunov spectrum vector.
-
-		Args:
-			spectrum: 1D array, e.g. spectra[i, j, :] with length L.
-
-		Returns:
-			(ked, keb)
-		 """
-		lam = np.asarray(spectrum, dtype=float).reshape(-1)
-		positive = lam[lam > 0.0]
-		N = lam.size
-
-		ked = float(np.sum(positive) / N)
-		keb = float(positive.size / N)
-		return ked, keb
-
-	def _set_param_value(self, name: str, value: float) -> None:
-		if name in ("xi", "eta"):
-			setattr(self, name, int(value))
-		else:
-			setattr(self, name, float(value))
-
-	def _sync_index_rule(self) -> None:
-		if self.xi == 0:
-			self.eta = self.L
-		if self.eta == 0:
-			self.xi = self.L
-		self._build_neighbor_indices()
-
-	def lyap_scan(
-		self,
-		param1: str,
-		values1: np.ndarray,
-		param2: str,
-		values2: np.ndarray,
-		x0: np.ndarray,
-		z0: float,
-		n: int,
-		discard: int = 100,
-		epsilon: float = 1e-12,
-		save_path: str = "mywork/output/cml_lyapunov_scan.npz",
-	) -> np.ndarray:
-		"""Scan two parameters and save all Lyapunov spectra for every combination.
-
-		Returns:
-			spectra: shape = (len(values1), len(values2), L)
-		 """
-		path = Path(save_path)
-		path.parent.mkdir(parents=True, exist_ok=True)
-
-		if path.exists():
-			print(f"[scan] File already exists: {path}")
-			while True:
-				choice = input("Choose action: [s]kip / [d]elete and rescan: ").strip().lower()
-				if choice in ("s", "skip"):
-					print("[scan] Skip current scan. Loading existing spectra from file.")
-					with np.load(path) as existing:
-						if "spectra" not in existing:
-							raise KeyError(f"'spectra' not found in existing file: {path}")
-						return np.asarray(existing["spectra"], dtype=float)
-				if choice in ("d", "delete"):
-					path.unlink()
-					print("[scan] Existing file deleted. Start new scan.")
-					break
-				print("Invalid input. Please type 's' or 'd'.")
-
-		v1 = np.asarray(values1, dtype=float)
-		v2 = np.asarray(values2, dtype=float)
-		spectra = np.empty((v1.size, v2.size, self.L), dtype=float)
-
-		original = {
-			"mu": self.mu,
-			"lam": self.lam,
-			"a": self.a,
-			"b": self.b,
-			"xi": self.xi,
-			"eta": self.eta,
-		}
-		ked = np.empty((v1.size, v2.size), dtype=float)
-		keb = np.empty((v1.size, v2.size), dtype=float)
-
-		total = int(v1.size * v2.size)
-		with Progress(
-			TextColumn("[bold cyan]{task.description}"),
-			BarColumn(),
-			TaskProgressColumn(),
-			TimeElapsedColumn(),
-			TimeRemainingColumn(),
-		) as progress:
-			task = progress.add_task(f"Scanning {param1} x {param2}", total=total)
-			for i, p1 in enumerate(v1):
-				for j, p2 in enumerate(v2):
-					self._set_param_value(param1, float(p1))
-					self._set_param_value(param2, float(p2))
-					self._sync_index_rule()
-					spectra[i, j, :] = self.lyapunov_spectrum(
-						x0=x0,
-						z0=z0,
-						n=n,
-						discard=discard,
-						epsilon=epsilon,
-					)
-					ked_, keb_ = self.ked_keb(spectra[i, j, :])
-					ked[i, j] = ked_
-					keb[i, j] = keb_
-					progress.update(task, advance=1)
-
-
-		for key, value in original.items():
-			setattr(self, key, value)
-		self._sync_index_rule()
-
-		np.savez_compressed(
-			path,
-			spectra=spectra,
-			ked=ked,
-			keb=keb,
-   			param1_name=param1,
-			param2_name=param2,
-			param1_values=v1,
-			param2_values=v2,
-		)
-		return spectra
-
-	def plot_ked_keb(self, data_path: str) -> None:
-
-		"""Load saved scan data and plot KED/KEB 3D surfaces."""
-		import matplotlib.pyplot as plt
-
-		data = np.load(data_path)
-		ked = np.asarray(data["ked"], dtype=float)
-		keb = np.asarray(data["keb"], dtype=float)
-		v1 = np.asarray(data["param1_values"], dtype=float)
-		v2 = np.asarray(data["param2_values"], dtype=float)
-
-		p1_name = str(data["param1_name"])
-		p2_name = str(data["param2_name"])
-
-		X, Y = np.meshgrid(v1, v2, indexing="ij")
-		ked_max = float(np.nanmax(ked)) if ked.size else 0.0
-		if not np.isfinite(ked_max) or ked_max <= 0.0:
-			ked_max = 1e-12
-
-		fig = plt.figure(figsize=(14, 6))
-
-		ax1 = fig.add_subplot(1, 2, 1, projection="3d")
-		surf1 = ax1.plot_surface(X, Y, ked, cmap="viridis", linewidth=0, antialiased=True)
-		ax1.set_title("KED 3D Surface")
-		ax1.set_xlabel(p1_name)
-		ax1.set_ylabel(p2_name)
-		ax1.set_zlabel("KED")
-		ax1.set_zlim(0.0, ked_max)
-		fig.colorbar(surf1, ax=ax1, shrink=0.65, pad=0.08)
-
-		ax2 = fig.add_subplot(1, 2, 2, projection="3d")
-		surf2 = ax2.plot_surface(X, Y, keb, cmap="plasma", linewidth=0, antialiased=True)
-		ax2.set_title("KEB 3D Surface")
-		ax2.set_xlabel(p1_name)
-		ax2.set_ylabel(p2_name)
-		ax2.set_zlabel("KEB")
-		ax2.set_zlim(0.0, 1.2)
-		fig.colorbar(surf2, ax=ax2, shrink=0.65, pad=0.08)
-
-		plt.tight_layout()
-		plt.show()
-
-	def generate_random_bits_file(
-    self,
-    n_bits: int,
-    save_path: str = "mywork/output/cml_random.bin",
-    x0: np.ndarray | None = None,
-    z0: float | None = None,
-    warmup: int = 200,
-    threshold: float = 0.5,
-    channel_index: int = 0,
-    bitorder: str = "little",
-    seed: int | None = None,
-) -> Path:
-
-
-		path = Path(save_path)
-		path.parent.mkdir(parents=True, exist_ok=True)
-
-		if path.exists():
-			print(f"[prng] File already exists: {path}")
-			while True:
-				choice = input("Choose action: [s]kip / [d]elete and regenerate: ").strip().lower()
-				if choice in ("s", "skip"):
-					print("[prng] Skip generation and keep existing file.")
-					return path
-				if choice in ("d", "delete"):
-					path.unlink()
-					print("[prng] Existing file deleted. Start generating.")
-					break
-				print("Invalid input. Please type 's' or 'd'.")
-
-		print(f"当前的参数设置：{self._show_params()}")
-		rng = np.random.default_rng(seed)
-
-		if x0 is None or z0 is None:
-			raise ValueError("Both x0 and z0 must be provided as initial conditions for the CML system.")
-		# Burn-in to reduce initial transient effect.
-		x = np.asarray(x0, dtype=float).copy()
-		z = float(z0)
-		for _ in range(max(0, int(warmup))):
-			x, z = self.step(x, z)
-
-
-
-		steps = (n_bits + self.L - 1) // self.L
-		bits = np.empty(steps * self.L, dtype=np.uint8)
-		pos = 0
-		onecount = 0
-		zerocout = 0
-  
-		# output = np.empty((steps, self.L), dtype=np.float32)
-  
-		for i in range(steps):
-			x, z = self.step(x, z)
-   
-			# output[i, :] = x.astype(np.float32)
-   
-			row_bits = (x >= threshold).astype(np.uint8)   # 一次拿 L 个 bit
-			onecount += np.sum(row_bits)
-			zerocout += np.sum(1 - row_bits)
-			bits[pos:pos + self.L] = row_bits	
-			pos += self.L
-			if i%1000 == 0:
-				print(f"[rng] Step {i}/{steps} - Generated {pos} bits so far...")
-		print(f"[rng] Total ones: {onecount}, Total zeros: {zerocout}, Ratio: {onecount/(zerocout+1e-12):.4f}")
-		bits = bits[:n_bits]
-  
-		#将output保存成csv在本地用于数据分析
-		# np.savetxt("mywork/output/cml_random_output.csv", output, delimiter=",")
-  
-		# Pack bits to bytes and write binary file.
-		pad = (-n_bits) % 8
-		if pad:
-			bits = np.pad(bits, (0, pad), mode="constant", constant_values=0)
-
-		packed = np.packbits(bits, bitorder=bitorder)
-		path.write_bytes(packed.tobytes())
-
-		print(f"[rng] Generated {n_bits} bits -> {packed.size} bytes")
-		print(f"[rng] Saved to: {path}")
-		return path
-
-	def vis_states(self,x0,z0,x1,z1,lat_index,steps,view = True):
-		x = np.asarray(x0, dtype=float).copy()
-		z = float(z0)
-		x_ = np.asarray(x1, dtype=float).copy()
-		z_ = float(z1)
-		states = np.empty((steps, self.L), dtype=float)
-		states_ = np.empty((steps, self.L), dtype=float)
-		for i in range(steps):
-			states[i, :] = x
-			states_[i, :] = x_
-			x, z = self.step(x, z)
-			x_, z_ = self.step(x_, z_)
-		import matplotlib.pyplot as plt
-		#将两个不同初始状态下的	lat_index位置绘制在同一张图上，展示它们的演化轨迹
-		if view:
-			print("drawing states...")
-			plt.figure(figsize=(10, 6))
-			plt.plot(states[:, lat_index], label="State 1", alpha=0.7)
-			plt.plot(states_[:, lat_index], label="State 2", alpha=0.7)
-			#在额外绘制一条线，表示两个状态的差值的绝对值，展示它们的分叉情况
-			diff = np.abs(states[:, lat_index] - states_[:, lat_index])
-			plt.plot(diff, label="Absolute Difference", color="red", linestyle="--", alpha=0.7)
-			plt.title(f"Evolution of Lattice Index {lat_index}")
-			plt.xlabel("Time Step")
-			plt.ylabel("State Value")	
-			plt.legend()
-			plt.grid()
-			plt.tight_layout()
-			plt.show()
-		return states, states_
-
-	def Bifurcation_diagram(
-		self,
-		x0,
-		z0,
-		lattice_index,
-		param_name,
-		param_range,
-		steps=2000,
-		discard=1000,
-	):
-		import matplotlib.pyplot as plt
-
-		if not hasattr(self, param_name):
-			raise ValueError(f"Unknown parameter: {param_name}")
-		if not (0 <= int(lattice_index) < self.L):
-			raise ValueError(f"lattice_index must be in [0, {self.L - 1}]")
-		if steps <= 0:
-			raise ValueError("steps must be > 0")
-		if discard < 0:
-			raise ValueError("discard must be >= 0")
-		x0 = np.asarray(x0, dtype=float).copy()
-		z0 = float(z0)
-		if x0.size != self.L:
-			raise ValueError(f"x0 length must equal L={self.L}")
-		param_values = np.asarray(param_range, dtype=float).reshape(-1)
-		if param_values.size == 0:
-			raise ValueError("param_range is empty")
-
-		# 每个参数值收集 steps 个稳态后采样点，用于散点图
-		x_scatter = np.repeat(param_values, steps)
-		y_scatter = np.empty(param_values.size * steps, dtype=float)
-		pos = 0
-
-		with Progress(
-			TextColumn("[bold cyan]{task.description}"),
-			BarColumn(),
-			TaskProgressColumn(),
-			TimeElapsedColumn(),
-			TimeRemainingColumn(),
-		) as progress:
-			task = progress.add_task(
-				f"Bifurcation scan: {param_name}",
-				total=int(param_values.size),
-			)
-
-			for p in param_values:
-				self._set_param_value(param_name, float(p))
-				self._sync_index_rule()
-
-				x = x0.copy()
-				z = z0
-
-				for _ in range(discard):
-					x, z = self.step(x, z)
-
-				for _ in range(steps):
-					x, z = self.step(x, z)
-					y_scatter[pos] = x[int(lattice_index)]
-					pos += 1
-
-				progress.update(task, advance=1)
-
-		# 恢复原始参数，避免影响后续流程
-		self._reset_params()
-
-		plt.figure(figsize=(10, 6))
-		plt.plot(
-			x_scatter,
-			y_scatter,
-			marker=".",
-			linestyle="",
-			markersize=1.0,
-			alpha=0.35,
-		)
-		plt.title(f"Bifurcation Diagram for {param_name} at Lattice Index {lattice_index}")
-		plt.xlabel(param_name)
-		plt.ylabel(f"State at Index {lattice_index}")
-		plt.grid(True, alpha=0.3)
-		plt.tight_layout()
-		plt.show()
-
-		return x_scatter, y_scatter
 
 if __name__ == "__main__":
-	params = {
-		"mu": 5,
-		"lam": 5,
-		"a": 100,
-		"b": 200,
-		"xi": 1,
-		"eta": 1,
-	}
- 
-	L = 50
-	x0 = np.random.rand(L)
-	z0 = 0.37
- 
-	sys = CMLSystem(L=L, params=params, initstate={"x0": np.random.rand(L), "z0": 0.37})
-
- 
-	# sys.lyap_scan(
-	# 	param1="mu",
-	# 	values1=np.linspace(0, 5, 10),
-	# 	param2="lam",
-	# 	values2=np.linspace(0, 5, 10),
-	# 	x0=x0,
-	# 	z0=z0,
-	# 	n=200,
-	# 	discard=100,
-	# 	save_path="mywork/output/cml_lyapunov_scan.npz",
-	# )
-	# sys.plot_ked_keb("mywork/output/cml_lyapunov_scan.npz")
- 
- 	#将x0d的第一位加上0.001，得到x1d，其他参数保持不变，观察它们的演化轨迹是否相似
-	# x0_ = x0.copy()
-	# x0_[11] += 0.001
-	# sys.vis_states(
-	# 	x0=x0,
-	# 	z0=0.37,
-	# 	x1=x0,
-	# 	z1=0.37,
-	# 	lat_index=40,
-	# 	steps=20000,
-	# )
-	# s,_ = sys.vis_states(x0=x0,z0=0.37,x1=x0_,z1=0.37,lat_index=40,steps=10000,view=False)
-	# #将s保存成csv在本地用于数据分析
-	# np.savetxt("mywork/output/cml_states.csv", s, delimiter=",")
- 
-	# 生成随机数文件
-	# sys.generate_random_bits_file(
-	# 	n_bits=100_000_000,
-	# 	save_path="mywork/output/cml_random.bin",
-	# 	x0=x0,
-	# 	z0=z0,	
-	# 	warmup=2000,
-	# 	threshold=0.6580636203289032,#0.6586409509181976  | 0.6580636203289032
-	# 	channel_index=0,
-	# 	bitorder="little",	
-	# 	seed=42,
-	# )
-
-	#分叉图
-	sys.Bifurcation_diagram(
-		x0=x0,
-		z0=z0,
-		lattice_index=13,
-		param_name="mu",
-		param_range=np.linspace(0, 5, 400),
-		steps=1000,
-		discard=200,
-	)
+    demo_1()

@@ -2,226 +2,118 @@
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -388
-		(b) S_n/n               = -0.000388
+		(a) The nth partial sum = -416
+		(b) S_n/n               = -0.000416
 		---------------------------------------------
-SUCCESS		p_value = 0.698016
+SUCCESS		p_value = 0.677410
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -454
-		(b) S_n/n               = -0.000454
+		(a) The nth partial sum = -142
+		(b) S_n/n               = -0.000142
 		---------------------------------------------
-SUCCESS		p_value = 0.649829
+SUCCESS		p_value = 0.887080
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 984
-		(b) S_n/n               = 0.000984
+		(a) The nth partial sum = -530
+		(b) S_n/n               = -0.000530
 		---------------------------------------------
-SUCCESS		p_value = 0.325116
+SUCCESS		p_value = 0.596112
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 378
-		(b) S_n/n               = 0.000378
+		(a) The nth partial sum = -1610
+		(b) S_n/n               = -0.001610
 		---------------------------------------------
-SUCCESS		p_value = 0.705431
+SUCCESS		p_value = 0.107398
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -420
-		(b) S_n/n               = -0.000420
+		(a) The nth partial sum = -930
+		(b) S_n/n               = -0.000930
 		---------------------------------------------
-SUCCESS		p_value = 0.674485
+SUCCESS		p_value = 0.352371
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 1620
-		(b) S_n/n               = 0.001620
+		(a) The nth partial sum = -694
+		(b) S_n/n               = -0.000694
 		---------------------------------------------
-SUCCESS		p_value = 0.105232
+SUCCESS		p_value = 0.487682
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -324
-		(b) S_n/n               = -0.000324
+		(a) The nth partial sum = 2546
+		(b) S_n/n               = 0.002546
 		---------------------------------------------
-SUCCESS		p_value = 0.745938
+SUCCESS		p_value = 0.010897
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -1726
-		(b) S_n/n               = -0.001726
+		(a) The nth partial sum = 450
+		(b) S_n/n               = 0.000450
 		---------------------------------------------
-SUCCESS		p_value = 0.084347
+SUCCESS		p_value = 0.652710
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 214
-		(b) S_n/n               = 0.000214
+		(a) The nth partial sum = 182
+		(b) S_n/n               = 0.000182
 		---------------------------------------------
-SUCCESS		p_value = 0.830547
+SUCCESS		p_value = 0.855583
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -72
-		(b) S_n/n               = -0.000072
+		(a) The nth partial sum = 654
+		(b) S_n/n               = 0.000654
 		---------------------------------------------
-SUCCESS		p_value = 0.942602
+SUCCESS		p_value = 0.513112
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 314
-		(b) S_n/n               = 0.000314
+		(a) The nth partial sum = -80
+		(b) S_n/n               = -0.000080
 		---------------------------------------------
-SUCCESS		p_value = 0.753521
+SUCCESS		p_value = 0.936237
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 272
-		(b) S_n/n               = 0.000272
+		(a) The nth partial sum = -2534
+		(b) S_n/n               = -0.002534
 		---------------------------------------------
-SUCCESS		p_value = 0.785622
+SUCCESS		p_value = 0.011277
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 1100
-		(b) S_n/n               = 0.001100
+		(a) The nth partial sum = 1062
+		(b) S_n/n               = 0.001062
 		---------------------------------------------
-SUCCESS		p_value = 0.271332
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 1520
-		(b) S_n/n               = 0.001520
-		---------------------------------------------
-SUCCESS		p_value = 0.128511
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -1044
-		(b) S_n/n               = -0.001044
-		---------------------------------------------
-SUCCESS		p_value = 0.296485
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 2030
-		(b) S_n/n               = 0.002030
-		---------------------------------------------
-SUCCESS		p_value = 0.042357
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -212
-		(b) S_n/n               = -0.000212
-		---------------------------------------------
-SUCCESS		p_value = 0.832107
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 600
-		(b) S_n/n               = 0.000600
-		---------------------------------------------
-SUCCESS		p_value = 0.548506
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -468
-		(b) S_n/n               = -0.000468
-		---------------------------------------------
-SUCCESS		p_value = 0.639785
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 348
-		(b) S_n/n               = 0.000348
-		---------------------------------------------
-SUCCESS		p_value = 0.727840
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -24
-		(b) S_n/n               = -0.000024
-		---------------------------------------------
-SUCCESS		p_value = 0.980853
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -632
-		(b) S_n/n               = -0.000632
-		---------------------------------------------
-SUCCESS		p_value = 0.527387
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 560
-		(b) S_n/n               = 0.000560
-		---------------------------------------------
-SUCCESS		p_value = 0.575479
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -330
-		(b) S_n/n               = -0.000330
-		---------------------------------------------
-SUCCESS		p_value = 0.741400
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -1250
-		(b) S_n/n               = -0.001250
-		---------------------------------------------
-SUCCESS		p_value = 0.211300
+SUCCESS		p_value = 0.288236
 
 			      FREQUENCY TEST
 		---------------------------------------------
@@ -236,215 +128,332 @@ SUCCESS		p_value = 0.296485
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -700
-		(b) S_n/n               = -0.000700
+		(a) The nth partial sum = 1390
+		(b) S_n/n               = 0.001390
 		---------------------------------------------
-SUCCESS		p_value = 0.483927
+SUCCESS		p_value = 0.164529
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -516
-		(b) S_n/n               = -0.000516
+		(a) The nth partial sum = -812
+		(b) S_n/n               = -0.000812
 		---------------------------------------------
-SUCCESS		p_value = 0.605854
+SUCCESS		p_value = 0.416792
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 452
-		(b) S_n/n               = 0.000452
+		(a) The nth partial sum = 466
+		(b) S_n/n               = 0.000466
 		---------------------------------------------
-SUCCESS		p_value = 0.651269
+SUCCESS		p_value = 0.641216
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -24
-		(b) S_n/n               = -0.000024
+		(a) The nth partial sum = 440
+		(b) S_n/n               = 0.000440
 		---------------------------------------------
-SUCCESS		p_value = 0.980853
+SUCCESS		p_value = 0.659937
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -1424
-		(b) S_n/n               = -0.001424
+		(a) The nth partial sum = 1078
+		(b) S_n/n               = 0.001078
 		---------------------------------------------
-SUCCESS		p_value = 0.154446
+SUCCESS		p_value = 0.281034
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 76
-		(b) S_n/n               = 0.000076
+		(a) The nth partial sum = 756
+		(b) S_n/n               = 0.000756
 		---------------------------------------------
-SUCCESS		p_value = 0.939419
+SUCCESS		p_value = 0.449649
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 178
-		(b) S_n/n               = 0.000178
+		(a) The nth partial sum = 1338
+		(b) S_n/n               = 0.001338
 		---------------------------------------------
-SUCCESS		p_value = 0.858723
+SUCCESS		p_value = 0.180896
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -2538
-		(b) S_n/n               = -0.002538
+		(a) The nth partial sum = 1110
+		(b) S_n/n               = 0.001110
 		---------------------------------------------
-SUCCESS		p_value = 0.011149
+SUCCESS		p_value = 0.266999
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -798
-		(b) S_n/n               = -0.000798
+		(a) The nth partial sum = 532
+		(b) S_n/n               = 0.000532
 		---------------------------------------------
-SUCCESS		p_value = 0.424870
+SUCCESS		p_value = 0.594726
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -746
-		(b) S_n/n               = -0.000746
+		(a) The nth partial sum = -1224
+		(b) S_n/n               = -0.001224
 		---------------------------------------------
-SUCCESS		p_value = 0.455667
+SUCCESS		p_value = 0.220952
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -92
-		(b) S_n/n               = -0.000092
+		(a) The nth partial sum = 1284
+		(b) S_n/n               = 0.001284
 		---------------------------------------------
-SUCCESS		p_value = 0.926698
+SUCCESS		p_value = 0.199142
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 300
-		(b) S_n/n               = 0.000300
+		(a) The nth partial sum = 908
+		(b) S_n/n               = 0.000908
 		---------------------------------------------
-SUCCESS		p_value = 0.764177
+SUCCESS		p_value = 0.363878
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 1244
-		(b) S_n/n               = 0.001244
+		(a) The nth partial sum = -474
+		(b) S_n/n               = -0.000474
 		---------------------------------------------
-SUCCESS		p_value = 0.213500
+SUCCESS		p_value = 0.635500
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 620
-		(b) S_n/n               = 0.000620
+		(a) The nth partial sum = -1876
+		(b) S_n/n               = -0.001876
 		---------------------------------------------
-SUCCESS		p_value = 0.535258
+SUCCESS		p_value = 0.060655
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -414
-		(b) S_n/n               = -0.000414
+		(a) The nth partial sum = 654
+		(b) S_n/n               = 0.000654
 		---------------------------------------------
-SUCCESS		p_value = 0.678874
+SUCCESS		p_value = 0.513112
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 672
-		(b) S_n/n               = 0.000672
+		(a) The nth partial sum = -152
+		(b) S_n/n               = -0.000152
 		---------------------------------------------
-SUCCESS		p_value = 0.501584
+SUCCESS		p_value = 0.879187
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 172
-		(b) S_n/n               = 0.000172
+		(a) The nth partial sum = 1652
+		(b) S_n/n               = 0.001652
 		---------------------------------------------
-SUCCESS		p_value = 0.863438
+SUCCESS		p_value = 0.098535
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 48
-		(b) S_n/n               = 0.000048
+		(a) The nth partial sum = -496
+		(b) S_n/n               = -0.000496
 		---------------------------------------------
-SUCCESS		p_value = 0.961716
+SUCCESS		p_value = 0.619894
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 1530
-		(b) S_n/n               = 0.001530
+		(a) The nth partial sum = 614
+		(b) S_n/n               = 0.000614
 		---------------------------------------------
-SUCCESS		p_value = 0.126017
+SUCCESS		p_value = 0.539215
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 1396
-		(b) S_n/n               = 0.001396
+		(a) The nth partial sum = 964
+		(b) S_n/n               = 0.000964
 		---------------------------------------------
-SUCCESS		p_value = 0.162714
+SUCCESS		p_value = 0.335046
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -500
-		(b) S_n/n               = -0.000500
+		(a) The nth partial sum = -96
+		(b) S_n/n               = -0.000096
 		---------------------------------------------
-SUCCESS		p_value = 0.617075
+SUCCESS		p_value = 0.923521
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -1236
-		(b) S_n/n               = -0.001236
+		(a) The nth partial sum = 12
+		(b) S_n/n               = 0.000012
 		---------------------------------------------
-SUCCESS		p_value = 0.216459
+SUCCESS		p_value = 0.990426
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 1196
-		(b) S_n/n               = 0.001196
+		(a) The nth partial sum = 494
+		(b) S_n/n               = 0.000494
 		---------------------------------------------
-SUCCESS		p_value = 0.231697
+SUCCESS		p_value = 0.621306
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 546
-		(b) S_n/n               = 0.000546
+		(a) The nth partial sum = 592
+		(b) S_n/n               = 0.000592
+		---------------------------------------------
+SUCCESS		p_value = 0.553851
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -368
+		(b) S_n/n               = -0.000368
+		---------------------------------------------
+SUCCESS		p_value = 0.712873
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 986
+		(b) S_n/n               = 0.000986
+		---------------------------------------------
+SUCCESS		p_value = 0.324133
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 1408
+		(b) S_n/n               = 0.001408
+		---------------------------------------------
+SUCCESS		p_value = 0.159131
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -2278
+		(b) S_n/n               = -0.002278
+		---------------------------------------------
+SUCCESS		p_value = 0.022727
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -630
+		(b) S_n/n               = -0.000630
+		---------------------------------------------
+SUCCESS		p_value = 0.528695
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -1478
+		(b) S_n/n               = -0.001478
+		---------------------------------------------
+SUCCESS		p_value = 0.139408
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -1466
+		(b) S_n/n               = -0.001466
+		---------------------------------------------
+SUCCESS		p_value = 0.142648
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -422
+		(b) S_n/n               = -0.000422
+		---------------------------------------------
+SUCCESS		p_value = 0.673025
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -370
+		(b) S_n/n               = -0.000370
+		---------------------------------------------
+SUCCESS		p_value = 0.711382
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -50
+		(b) S_n/n               = -0.000050
+		---------------------------------------------
+SUCCESS		p_value = 0.960122
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -2382
+		(b) S_n/n               = -0.002382
+		---------------------------------------------
+SUCCESS		p_value = 0.017219
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 1240
+		(b) S_n/n               = 0.001240
+		---------------------------------------------
+SUCCESS		p_value = 0.214975
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -546
+		(b) S_n/n               = -0.000546
 		---------------------------------------------
 SUCCESS		p_value = 0.585066
 
@@ -452,388 +461,118 @@ SUCCESS		p_value = 0.585066
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -296
-		(b) S_n/n               = -0.000296
+		(a) The nth partial sum = 916
+		(b) S_n/n               = 0.000916
 		---------------------------------------------
-SUCCESS		p_value = 0.767230
+SUCCESS		p_value = 0.359667
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 386
-		(b) S_n/n               = 0.000386
+		(a) The nth partial sum = -1382
+		(b) S_n/n               = -0.001382
 		---------------------------------------------
-SUCCESS		p_value = 0.699497
+SUCCESS		p_value = 0.166972
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 404
-		(b) S_n/n               = 0.000404
+		(a) The nth partial sum = 440
+		(b) S_n/n               = 0.000440
 		---------------------------------------------
-SUCCESS		p_value = 0.686213
+SUCCESS		p_value = 0.659937
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -286
-		(b) S_n/n               = -0.000286
+		(a) The nth partial sum = -640
+		(b) S_n/n               = -0.000640
 		---------------------------------------------
-SUCCESS		p_value = 0.774878
+SUCCESS		p_value = 0.522173
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 366
-		(b) S_n/n               = 0.000366
+		(a) The nth partial sum = -360
+		(b) S_n/n               = -0.000360
 		---------------------------------------------
-SUCCESS		p_value = 0.714365
+SUCCESS		p_value = 0.718847
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -1044
-		(b) S_n/n               = -0.001044
+		(a) The nth partial sum = 976
+		(b) S_n/n               = 0.000976
 		---------------------------------------------
-SUCCESS		p_value = 0.296485
+SUCCESS		p_value = 0.329064
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 760
-		(b) S_n/n               = 0.000760
+		(a) The nth partial sum = -774
+		(b) S_n/n               = -0.000774
 		---------------------------------------------
-SUCCESS		p_value = 0.447255
+SUCCESS		p_value = 0.438931
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 1394
-		(b) S_n/n               = 0.001394
+		(a) The nth partial sum = -100
+		(b) S_n/n               = -0.000100
 		---------------------------------------------
-SUCCESS		p_value = 0.163318
+SUCCESS		p_value = 0.920344
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -830
-		(b) S_n/n               = -0.000830
+		(a) The nth partial sum = 70
+		(b) S_n/n               = 0.000070
 		---------------------------------------------
-SUCCESS		p_value = 0.406539
+SUCCESS		p_value = 0.944194
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -34
-		(b) S_n/n               = -0.000034
+		(a) The nth partial sum = -184
+		(b) S_n/n               = -0.000184
 		---------------------------------------------
-SUCCESS		p_value = 0.972877
+SUCCESS		p_value = 0.854013
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 378
-		(b) S_n/n               = 0.000378
+		(a) The nth partial sum = 980
+		(b) S_n/n               = 0.000980
 		---------------------------------------------
-SUCCESS		p_value = 0.705431
+SUCCESS		p_value = 0.327086
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 38
-		(b) S_n/n               = 0.000038
+		(a) The nth partial sum = -820
+		(b) S_n/n               = -0.000820
 		---------------------------------------------
-SUCCESS		p_value = 0.969688
+SUCCESS		p_value = 0.412216
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -660
-		(b) S_n/n               = -0.000660
+		(a) The nth partial sum = 1022
+		(b) S_n/n               = 0.001022
 		---------------------------------------------
-SUCCESS		p_value = 0.509254
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 104
-		(b) S_n/n               = 0.000104
-		---------------------------------------------
-SUCCESS		p_value = 0.917169
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -1462
-		(b) S_n/n               = -0.001462
-		---------------------------------------------
-SUCCESS		p_value = 0.143741
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 172
-		(b) S_n/n               = 0.000172
-		---------------------------------------------
-SUCCESS		p_value = 0.863438
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 1030
-		(b) S_n/n               = 0.001030
-		---------------------------------------------
-SUCCESS		p_value = 0.303010
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 214
-		(b) S_n/n               = 0.000214
-		---------------------------------------------
-SUCCESS		p_value = 0.830547
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -178
-		(b) S_n/n               = -0.000178
-		---------------------------------------------
-SUCCESS		p_value = 0.858723
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 514
-		(b) S_n/n               = 0.000514
-		---------------------------------------------
-SUCCESS		p_value = 0.607252
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 290
-		(b) S_n/n               = 0.000290
-		---------------------------------------------
-SUCCESS		p_value = 0.771816
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -1462
-		(b) S_n/n               = -0.001462
-		---------------------------------------------
-SUCCESS		p_value = 0.143741
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -342
-		(b) S_n/n               = -0.000342
-		---------------------------------------------
-SUCCESS		p_value = 0.732351
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -912
-		(b) S_n/n               = -0.000912
-		---------------------------------------------
-SUCCESS		p_value = 0.361769
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -784
-		(b) S_n/n               = -0.000784
-		---------------------------------------------
-SUCCESS		p_value = 0.433040
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -200
-		(b) S_n/n               = -0.000200
-		---------------------------------------------
-SUCCESS		p_value = 0.841481
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -998
-		(b) S_n/n               = -0.000998
-		---------------------------------------------
-SUCCESS		p_value = 0.318279
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 404
-		(b) S_n/n               = 0.000404
-		---------------------------------------------
-SUCCESS		p_value = 0.686213
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 694
-		(b) S_n/n               = 0.000694
-		---------------------------------------------
-SUCCESS		p_value = 0.487682
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 636
-		(b) S_n/n               = 0.000636
-		---------------------------------------------
-SUCCESS		p_value = 0.524776
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -420
-		(b) S_n/n               = -0.000420
-		---------------------------------------------
-SUCCESS		p_value = 0.674485
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 1128
-		(b) S_n/n               = 0.001128
-		---------------------------------------------
-SUCCESS		p_value = 0.259320
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 1086
-		(b) S_n/n               = 0.001086
-		---------------------------------------------
-SUCCESS		p_value = 0.277479
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -1450
-		(b) S_n/n               = -0.001450
-		---------------------------------------------
-SUCCESS		p_value = 0.147059
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 342
-		(b) S_n/n               = 0.000342
-		---------------------------------------------
-SUCCESS		p_value = 0.732351
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 1880
-		(b) S_n/n               = 0.001880
-		---------------------------------------------
-SUCCESS		p_value = 0.060108
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 1158
-		(b) S_n/n               = 0.001158
-		---------------------------------------------
-SUCCESS		p_value = 0.246864
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 198
-		(b) S_n/n               = 0.000198
-		---------------------------------------------
-SUCCESS		p_value = 0.843045
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 634
-		(b) S_n/n               = 0.000634
-		---------------------------------------------
-SUCCESS		p_value = 0.526081
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -1214
-		(b) S_n/n               = -0.001214
-		---------------------------------------------
-SUCCESS		p_value = 0.224748
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -620
-		(b) S_n/n               = -0.000620
-		---------------------------------------------
-SUCCESS		p_value = 0.535258
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = 406
-		(b) S_n/n               = 0.000406
-		---------------------------------------------
-SUCCESS		p_value = 0.684743
-
-			      FREQUENCY TEST
-		---------------------------------------------
-		COMPUTATIONAL INFORMATION:
-		---------------------------------------------
-		(a) The nth partial sum = -4
-		(b) S_n/n               = -0.000004
-		---------------------------------------------
-SUCCESS		p_value = 0.996808
+SUCCESS		p_value = 0.306781
 
 			      FREQUENCY TEST
 		---------------------------------------------
@@ -848,17 +587,107 @@ SUCCESS		p_value = 0.226279
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 606
-		(b) S_n/n               = 0.000606
+		(a) The nth partial sum = 718
+		(b) S_n/n               = 0.000718
 		---------------------------------------------
-SUCCESS		p_value = 0.544515
+SUCCESS		p_value = 0.472757
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -344
-		(b) S_n/n               = -0.000344
+		(a) The nth partial sum = 1258
+		(b) S_n/n               = 0.001258
+		---------------------------------------------
+SUCCESS		p_value = 0.208392
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 1402
+		(b) S_n/n               = 0.001402
+		---------------------------------------------
+SUCCESS		p_value = 0.160915
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -272
+		(b) S_n/n               = -0.000272
+		---------------------------------------------
+SUCCESS		p_value = 0.785622
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 672
+		(b) S_n/n               = 0.000672
+		---------------------------------------------
+SUCCESS		p_value = 0.501584
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 838
+		(b) S_n/n               = 0.000838
+		---------------------------------------------
+SUCCESS		p_value = 0.402031
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -1390
+		(b) S_n/n               = -0.001390
+		---------------------------------------------
+SUCCESS		p_value = 0.164529
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 860
+		(b) S_n/n               = 0.000860
+		---------------------------------------------
+SUCCESS		p_value = 0.389789
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -758
+		(b) S_n/n               = -0.000758
+		---------------------------------------------
+SUCCESS		p_value = 0.448451
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -924
+		(b) S_n/n               = -0.000924
+		---------------------------------------------
+SUCCESS		p_value = 0.355486
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -1926
+		(b) S_n/n               = -0.001926
+		---------------------------------------------
+SUCCESS		p_value = 0.054104
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 344
+		(b) S_n/n               = 0.000344
 		---------------------------------------------
 SUCCESS		p_value = 0.730846
 
@@ -866,10 +695,172 @@ SUCCESS		p_value = 0.730846
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = -1420
-		(b) S_n/n               = -0.001420
+		(a) The nth partial sum = 1158
+		(b) S_n/n               = 0.001158
 		---------------------------------------------
-SUCCESS		p_value = 0.155608
+SUCCESS		p_value = 0.246864
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 1004
+		(b) S_n/n               = 0.001004
+		---------------------------------------------
+SUCCESS		p_value = 0.315379
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -520
+		(b) S_n/n               = -0.000520
+		---------------------------------------------
+SUCCESS		p_value = 0.603064
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -398
+		(b) S_n/n               = -0.000398
+		---------------------------------------------
+SUCCESS		p_value = 0.690630
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -1904
+		(b) S_n/n               = -0.001904
+		---------------------------------------------
+SUCCESS		p_value = 0.056910
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 892
+		(b) S_n/n               = 0.000892
+		---------------------------------------------
+SUCCESS		p_value = 0.372393
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -1286
+		(b) S_n/n               = -0.001286
+		---------------------------------------------
+SUCCESS		p_value = 0.198443
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 1872
+		(b) S_n/n               = 0.001872
+		---------------------------------------------
+SUCCESS		p_value = 0.061207
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 686
+		(b) S_n/n               = 0.000686
+		---------------------------------------------
+SUCCESS		p_value = 0.492713
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -1276
+		(b) S_n/n               = -0.001276
+		---------------------------------------------
+SUCCESS		p_value = 0.201956
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 1700
+		(b) S_n/n               = 0.001700
+		---------------------------------------------
+SUCCESS		p_value = 0.089131
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 546
+		(b) S_n/n               = 0.000546
+		---------------------------------------------
+SUCCESS		p_value = 0.585066
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -184
+		(b) S_n/n               = -0.000184
+		---------------------------------------------
+SUCCESS		p_value = 0.854013
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -480
+		(b) S_n/n               = -0.000480
+		---------------------------------------------
+SUCCESS		p_value = 0.631227
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 490
+		(b) S_n/n               = 0.000490
+		---------------------------------------------
+SUCCESS		p_value = 0.624134
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 846
+		(b) S_n/n               = 0.000846
+		---------------------------------------------
+SUCCESS		p_value = 0.397553
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = 1570
+		(b) S_n/n               = 0.001570
+		---------------------------------------------
+SUCCESS		p_value = 0.116415
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -180
+		(b) S_n/n               = -0.000180
+		---------------------------------------------
+SUCCESS		p_value = 0.857153
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -184
+		(b) S_n/n               = -0.000184
+		---------------------------------------------
+SUCCESS		p_value = 0.854013
 
 			      FREQUENCY TEST
 		---------------------------------------------
@@ -884,17 +875,26 @@ SUCCESS		p_value = 0.974472
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 30
-		(b) S_n/n               = 0.000030
+		(a) The nth partial sum = -456
+		(b) S_n/n               = -0.000456
 		---------------------------------------------
-SUCCESS		p_value = 0.976067
+SUCCESS		p_value = 0.648390
 
 			      FREQUENCY TEST
 		---------------------------------------------
 		COMPUTATIONAL INFORMATION:
 		---------------------------------------------
-		(a) The nth partial sum = 120
-		(b) S_n/n               = 0.000120
+		(a) The nth partial sum = 90
+		(b) S_n/n               = 0.000090
 		---------------------------------------------
-SUCCESS		p_value = 0.904483
+SUCCESS		p_value = 0.928287
+
+			      FREQUENCY TEST
+		---------------------------------------------
+		COMPUTATIONAL INFORMATION:
+		---------------------------------------------
+		(a) The nth partial sum = -1924
+		(b) S_n/n               = -0.001924
+		---------------------------------------------
+SUCCESS		p_value = 0.054355
 

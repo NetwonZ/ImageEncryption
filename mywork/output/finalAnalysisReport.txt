@@ -128,7 +128,7 @@ RESULTS FOR THE UNIFORMITY OF P-VALUES AND THE PROPORTION OF PASSING SEQUENCES
  12  15  10   7  14  10   5   8   8  11  0.455937     99/100     NonOverlappingTemplate
   6   8   7  10   8  13  11  23   5   9  0.004629     99/100     NonOverlappingTemplate
   1  10  10  13  13   9  11  11   9  13  0.262249     99/100     NonOverlappingTemplate
- 16  12   7   9  10   8   6   6  11  15  0.262249     95/100  *  NonOverlappingTemplate
+ 16  12   7   9  10   8   6   6  11  15  0.262249     96/100     NonOverlappingTemplate
   8  19   6   7   9  17  10  10   5   9  0.028817     99/100     NonOverlappingTemplate
   9   8  13  18   7  11   5  11  10   8  0.224821     99/100     NonOverlappingTemplate
  13  10   9  13  11  11   9  10   7   7  0.911413    100/100     NonOverlappingTemplate

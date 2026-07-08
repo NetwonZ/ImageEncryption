@@ -1,12 +1,64 @@
 from __future__ import annotations
 
 from datetime import datetime
+import math
 from pathlib import Path
 
 import numpy as np
 import sympy as sp
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
+try:
+	from numba import njit, prange
+except ImportError:  # pragma: no cover - fallback keeps the module usable without numba.
+	njit = None
+	prange = range
+
+
+if njit is not None:
+	@njit(parallel=True, cache=True)
+	def _generate_rdseq_numba(
+		x0: np.ndarray,
+		p_idx: np.ndarray,
+		q_idx: np.ndarray,
+		mu: float,
+		a: float,
+		is_mod: bool,
+		N: int,
+	) -> np.ndarray:
+		L = x0.size
+		x = x0.copy()
+		fx = np.empty(L, dtype=np.float64)
+		x_next = np.empty(L, dtype=np.float64)
+		x_values = np.empty((N, L), dtype=np.float64)
+		factor = 5.0 + 3.0 * mu
+		inner_factor = 15.0 * math.pi
+		angle_factor = 2.0 * math.pi
+
+		for t in range(N):
+			for i in prange(L):
+				xi = x[i]
+				fx[i] = abs(math.sin(factor * (1.0 - (a * xi * math.sin(inner_factor * xi * (1.0 - xi))))))
+
+			for i in prange(L):
+				left = fx[i - 1] if i > 0 else fx[L - 1]
+				right = fx[i + 1] if i < L - 1 else fx[0]
+				fp = fx[p_idx[i]]
+				fq = fx[q_idx[i]]
+				value = 1.0 - math.cos(angle_factor * (left + fx[i] + right))
+				value += 0.1 * math.sqrt(fp * fp + fq * fq)
+				if is_mod:
+					value = value % 1.0
+				x_next[i] = value
+				x_values[t, i] = value
+
+			tmp = x
+			x = x_next
+			x_next = tmp
+
+		return x_values
+else:
+	_generate_rdseq_numba = None
 
 class SalomoncouplingCML:
 	"""Salomon coupling CML with non-adjacent p/q indices.
@@ -14,7 +66,7 @@ class SalomoncouplingCML:
 	Core update rule:
 		x_{n+1}(i) = 1 - cos(2*pi*(f(x_{i-1}) + f(x_i) + f(x_{i+1})))
 					 + 0.1*sqrt(f(x_p)^2 + f(x_q)^2)
-
+		f(x) = |sin((5 + 3 * mu) * (1 - (a * x * sin(15 * pi * x * (1 - x)))))|
 	p/q index rule:
 		p = ((1 + xi) * i) % L
 		q = ((eta + xi*eta + 1) * i) % L
@@ -152,42 +204,32 @@ class SalomoncouplingCML:
 		z_next = np.mod(self.g(float(z)), 1.0)
 		return x_next, float(z_next)
 
-	def iterate_median(
+
+	def iterate_states(
 		self,
 		x0: np.ndarray,
 		z0: float,
-		n: int,
-		return_states: bool = False,
-	) -> float | tuple[np.ndarray, float]:
-		"""Iterate N times and compute median over all N*L generated values.
+		arrL: int,
+	) -> np.ndarray:
+		"""Iterate the map arrL times and return all generated x states.
 
-		Args:
-			x0: Initial x state, length must equal L.
-			z0: Initial z state.
-			n: Number of iterations.
-			return_states: If True, also return the (n, L) stored states.
-
-		Returns:
-			Median value of flattened (n, L) states,
-			or (states, median) when return_states=True.
+		Each iteration produces one length-L state vector, so the returned array
+		has shape (arrL, L).
 		"""
-		if not isinstance(n, int) or n <= 0:
-			raise ValueError("n must be a positive integer")
+		if not isinstance(arrL, int) or arrL <= 0:
+			raise ValueError("arrL must be a positive integer")
 
 		x = np.asarray(x0, dtype=float).copy()
 		z = float(z0)
 		if x.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 
-		states = np.empty((n, self.L), dtype=float)
-		for i in range(n):
+		states = np.empty((arrL, self.L), dtype=float)
+		for i in range(arrL):
 			x, z = self.step(x, z)
 			states[i, :] = x
 
-		median_value = float(np.median(states))
-		if return_states:
-			return states, median_value
-		return median_value
+		return states
 
 	#sym:generate_random_bits_file
 	def generate_random_bits_file(
@@ -741,8 +783,7 @@ class SalomoncouplingCML:
 		ld = float(sum_mi / den) if den > 0.0 else 0.0
 		return ld, mi_upper
 
-	#sym:ami_scan
-	def ami_scan(
+	def AMI_scan(
 		self,
 		param1: str = "mu",
 		values1: np.ndarray | None = None,
@@ -755,20 +796,27 @@ class SalomoncouplingCML:
 		n_states: int = 10,
 		save_path: str = "mywork/output/salomon_ami_scan.npz",
 		timestamp_on_exists: bool = False,
+		plot: bool = True,
+		save_fig_path: str | None = None,
 	) -> np.ndarray:
-		"""Scan two parameters and compute paper-defined AMI metric Ld.
+		"""Scan two parameters, compute average mutual information Ld, and save it.
 
-		This method only performs scanning and data persistence.
-		Use `plot_ami_wireframe` for visualization.
+		The saved surface follows the paper-style definition used by
+		``average_mutual_information``: each grid point stores the average pairwise
+		mutual information among lattice sequences after the transient is discarded.
 		"""
 		if not hasattr(self, param1):
 			raise ValueError(f"Unknown parameter: {param1}")
 		if not hasattr(self, param2):
 			raise ValueError(f"Unknown parameter: {param2}")
+		if param1 == param2:
+			raise ValueError("param1 and param2 must be different parameters")
 		if not isinstance(n, int) or n <= 0:
 			raise ValueError("n must be a positive integer")
 		if not isinstance(discard, int) or discard < 0:
 			raise ValueError("discard must be a non-negative integer")
+		if discard >= n:
+			raise ValueError(f"discard ({discard}) must be less than n ({n})")
 		if not isinstance(n_states, int) or n_states <= 1:
 			raise ValueError("n_states must be an integer greater than 1")
 
@@ -783,6 +831,10 @@ class SalomoncouplingCML:
 			raise ValueError("values1 and values2 must be 1D arrays")
 		if v1.size == 0 or v2.size == 0:
 			raise ValueError("values1 and values2 must not be empty")
+
+		for name, values in ((param1, v1), (param2, v2)):
+			if name in ("xi", "eta") and not np.allclose(values, np.rint(values)):
+				raise ValueError(f"{name} scan values must be integers")
 
 		x0_arr = np.asarray(self.x0 if x0 is None else x0, dtype=float).copy()
 		z0_val = float(self.z0 if z0 is None else z0)
@@ -810,6 +862,8 @@ class SalomoncouplingCML:
 								raise KeyError(f"'ld_grid' not found in existing file: {path}")
 							ld_existing = np.asarray(existing["ld_grid"], dtype=float)
 						self.last_ami_scan_path = str(path)
+						if plot:
+							self.plot_avg_AMI_wireframe(data_path=str(path), save_fig_path=save_fig_path)
 						return ld_existing
 					if choice in ("d", "delete"):
 						path.unlink()
@@ -838,15 +892,10 @@ class SalomoncouplingCML:
 
 						x = x0_arr.copy()
 						z = z0_val
-
 						for _ in range(discard):
 							x, z = self.step(x, z)
 
-						states = np.empty((n, self.L), dtype=float)
-						for t in range(n):
-							x, z = self.step(x, z)
-							states[t, :] = x
-
+						states = self.iterate_states(x0=x, z0=z, arrL=n)
 						ld, _ = self.average_mutual_information(states=states, n_states=n_states)
 						ld_grid[i, j] = ld
 
@@ -864,10 +913,21 @@ class SalomoncouplingCML:
 			n=n,
 			discard=discard,
 			n_states=n_states,
-			ld_definition="sum_{i<j} I(S(i),S(j)) / (L*(L-1))",
+			L=self.L,
+			mu=self.mu,
+			lam=self.lam,
+			a=self.a,
+			b=self.b,
+			xi=self.xi,
+			eta=self.eta,
+			metric_name="average_mutual_information",
+			metric_symbol="Ld",
 		)
 		self.last_ami_scan_path = str(path)
+		if plot:
+			self.plot_avg_AMI_wireframe(data_path=str(path), save_fig_path=save_fig_path)
 		return ld_grid
+
 
 	#sym:ie_scan_wireframe
 	def avg_IE(
@@ -1053,8 +1113,6 @@ class SalomoncouplingCML:
 		cmap_name: str = "viridis",
 		linewidth: float = 0.8,
 		alpha: float = 1.0,
-		vmin: float | None = None,
-		vmax: float | None = None,
 	):
 		"""Draw a wireframe with line colors mapped to local Z values."""
 		import matplotlib.pyplot as plt
@@ -1076,14 +1134,7 @@ class SalomoncouplingCML:
 		if np.isclose(z_min, z_max):
 			z_max = z_min + 1e-12
 
-		norm_min = z_min if vmin is None else float(vmin)
-		norm_max = z_max if vmax is None else float(vmax)
-		if not np.isfinite(norm_min) or not np.isfinite(norm_max):
-			raise ValueError("vmin and vmax must be finite numbers")
-		if norm_max <= norm_min:
-			raise ValueError(f"Invalid color range: vmax ({norm_max}) must be greater than vmin ({norm_min})")
-
-		norm = Normalize(vmin=norm_min, vmax=norm_max)
+		norm = Normalize(vmin=z_min, vmax=z_max)
 		cmap = plt.get_cmap(cmap_name)
 
 		def _add_segments(points: np.ndarray) -> None:
@@ -1115,7 +1166,6 @@ class SalomoncouplingCML:
 		data_path: str,
 		save_fig_path: str | None = None,
 		title: str | None = None,
-		colorbar_range: tuple[float, float] | None = None,
 	) -> None:
 		"""Load IE(i, p) scan data and draw IE 3D wireframe."""
 		import matplotlib.pyplot as plt
@@ -1144,11 +1194,6 @@ class SalomoncouplingCML:
 
 		i_values = np.arange(ie_grid.shape[1], dtype=float)
 		X, Y = np.meshgrid(i_values, param_values, indexing="xy")
-		if colorbar_range is None:
-			vmin = float(np.nanmin(ie_grid))
-			vmax = float(np.nanmax(ie_grid))
-		else:
-			vmin, vmax = float(colorbar_range[0]), float(colorbar_range[1])
 
 		fig = plt.figure(figsize=(9, 7))
 		ax = fig.add_subplot(111, projection="3d")
@@ -1159,8 +1204,6 @@ class SalomoncouplingCML:
 			Z=ie_grid,
 			cmap_name="viridis",
 			linewidth=0.9,
-			vmin=vmin,
-			vmax=vmax,
 		)
 
 		if title is None:
@@ -1178,7 +1221,7 @@ class SalomoncouplingCML:
 			pad = 1e-8 if z_min == 0.0 else max(1e-8, abs(z_min) * 0.05)
 			z_min -= pad
 			z_max += pad
-		ax.set_zlim(0, 3.5)
+		ax.set_zlim(z_min, z_max)
 
 		mappable = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
 		mappable.set_array([])
@@ -1235,8 +1278,6 @@ class SalomoncouplingCML:
 			Z=hd_grid,
 			cmap_name="viridis",
 			linewidth=0.9,
-			vmin=vmin,
-			vmax=vmax,
 		)
 
 		if title is None:
@@ -1254,8 +1295,7 @@ class SalomoncouplingCML:
 			pad = 1e-8 if z_min == 0.0 else max(1e-8, abs(z_min) * 0.05)
 			z_min -= pad
 			z_max += pad
-   
-		ax.set_zlim(0, 3.5)
+		ax.set_zlim(z_min, z_max)
 
 		mappable = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
 		mappable.set_array([])
@@ -1272,14 +1312,13 @@ class SalomoncouplingCML:
 			print(f"[avg_ie] Saved avg_IE wireframe figure: {fig_path}")
 		plt.show()
 
-	#sym:plot_ami_wireframe
-	def plot_ami_wireframe(
+	def plot_avg_AMI_wireframe(
 		self,
 		data_path: str,
 		save_fig_path: str | None = None,
 		title: str | None = None,
 	) -> None:
-		"""Load AMI scan data and draw Ld 3D wireframe with Z-mapped colors."""
+		"""Load AMI scan data and draw Ld(mu, e) 3D wireframe."""
 		import matplotlib.pyplot as plt
 
 		data = np.load(data_path)
@@ -1289,8 +1328,8 @@ class SalomoncouplingCML:
 		ld_grid = np.asarray(data["ld_grid"], dtype=float)
 		v1 = np.asarray(data["param1_values"], dtype=float)
 		v2 = np.asarray(data["param2_values"], dtype=float)
-		p1_name = str(data["param1_name"])
-		p2_name = str(data["param2_name"])
+		p1_name = str(data["param1_name"]) if "param1_name" in data else "mu"
+		p2_name = str(data["param2_name"]) if "param2_name" in data else "lam"
 
 		expected_shape = (v1.size, v2.size)
 		if ld_grid.shape != expected_shape:
@@ -1338,8 +1377,70 @@ class SalomoncouplingCML:
 			fig_path = Path(save_fig_path)
 			fig_path.parent.mkdir(parents=True, exist_ok=True)
 			fig.savefig(fig_path, dpi=300, bbox_inches="tight")
-			print(f"[ami] Saved wireframe figure: {fig_path}")
+			print(f"[ami] Saved AMI wireframe figure: {fig_path}")
 		plt.show()
+
+	def plot_ie_wireframe(
+		self,
+		data_path: str,
+		save_fig_path: str | None = None,
+		title: str | None = None,
+	) -> None:
+		"""Load IE scan data and draw the Hd 3D wireframe."""
+		import matplotlib.pyplot as plt
+
+		data = np.load(data_path)
+		if "hd_grid" not in data:
+			raise KeyError(f"'hd_grid' not found in file: {data_path}")
+
+		hd_grid = np.asarray(data["hd_grid"], dtype=float)
+		v1 = np.asarray(data["param1_values"], dtype=float)
+		v2 = np.asarray(data["param2_values"], dtype=float)
+		p1_name = str(data["param1_name"])
+		p2_name = str(data["param2_name"])
+		n_states = int(data["n_states"]) if "n_states" in data else 10
+
+		expected_shape = (v1.size, v2.size)
+		if hd_grid.shape != expected_shape:
+			raise ValueError(f"hd_grid shape {hd_grid.shape} does not match expected {expected_shape}")
+
+		X, Y = np.meshgrid(v1, v2, indexing="ij")
+
+		fig = plt.figure(figsize=(9, 7))
+		ax = fig.add_subplot(111, projection="3d")
+		norm, cmap = self._plot_colored_wireframe(
+			ax=ax,
+			X=X,
+			Y=Y,
+			Z=hd_grid,
+			cmap_name="viridis",
+			linewidth=0.9,
+		)
+
+		if title is None:
+			title = f"Average Information Entropy Wireframe ({p1_name} vs {p2_name})"
+		ax.set_title(title)
+		ax.set_xlabel(p1_name)
+		ax.set_ylabel("e (lam)" if p2_name == "lam" else p2_name)
+		ax.set_zlabel("Hd")
+		ax.set_xlim(float(np.min(v1)), float(np.max(v1)))
+		ax.set_ylim(float(np.min(v2)), float(np.max(v2)))
+		ax.set_zlim(3, float(np.log2(max(n_states, 2))))
+		mappable = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+		mappable.set_array([])
+		fig.colorbar(mappable, ax=ax, shrink=0.7, pad=0.08, label="Hd")
+
+		ax.view_init(elev=24, azim=-128)
+		ax.grid(True, alpha=0.35)
+
+		plt.tight_layout()
+		if save_fig_path is not None:
+			fig_path = Path(save_fig_path)
+			fig_path.parent.mkdir(parents=True, exist_ok=True)
+			fig.savefig(fig_path, dpi=300, bbox_inches="tight")
+			print(f"[ie] Saved wireframe figure: {fig_path}")
+		plt.show()
+
 
 	#sym:plot_ked_keb
 	def plot_ked_keb(self, data_path: str,save_fig_path: str | None = None) -> None:
@@ -1377,7 +1478,7 @@ class SalomoncouplingCML:
 		ax1.set_zlabel("KED")
 		ax1.set_xlim(float(np.min(v1)), float(np.max(v1)))
 		ax1.set_ylim(float(np.min(v2)), float(np.max(v2)))
-		ax1.set_zlim(0.0, ked_max)
+		ax1.set_zlim(np.nanmin(ked), ked_max)
 		mappable1 = plt.cm.ScalarMappable(norm=norm1, cmap=cmap1)
 		mappable1.set_array([])
 		fig.colorbar(mappable1, ax=ax1, shrink=0.65, pad=0.08, label="KED")
@@ -1477,30 +1578,132 @@ class SalomoncouplingCML:
 			self._reset_params()
 
 		plt.figure(figsize=(10, 6))
-		plt.plot(
-			x_scatter,
-			y_scatter,
-			marker=".",
-			linestyle="",
-			markersize=1.0,
-			alpha=0.35,
-		)
-		plt.title(f"Bifurcation Diagram for {param_name} at Lattice Index {lattice_index}")
-		plt.xlabel(param_name)
+		plt.scatter(x_scatter, y_scatter,marker='.', color="blue", s=5, alpha=1, edgecolors="none")
+		plt.title(f"Bifurcation Diagram")
+		plt.xlabel("v")
 		plt.ylabel(f"State at Index {lattice_index}")
-		plt.grid(True, alpha=0.3)
+		plt.xlim(float(np.min(param_values)), float(np.max(param_values)))
+		plt.ylim(0, 1)
+		plt.grid(False)
 		plt.tight_layout()
 		plt.show()
 
 		return x_scatter, y_scatter
 
+	def vis_lattice_n(self,lattice_index):
+	#展示lattice_index位置的状态随时间的变化
+		N = 1000
+		x0 = self.x0
+		z0 = self.z0
+		import matplotlib.pyplot as plt
+		x0 = np.asarray(x0, dtype=float).copy()
+		z0 = float(z0)
+		if x0.size != self.L:
+			raise ValueError(f"x0 length must equal L={self.L}")
+		x_values = np.empty(N, dtype=float)
+		z = z0
+		x = x0.copy()
+		for t in range(N):
+			x, z = self.step(x, z)
+			x_values[t] = x[int(lattice_index)]
+
+		plt.figure(figsize=(10, 6))
+		plt.plot(range(N), x_values, marker=".", markersize=2.0, alpha=0.7)
+		plt.title(f"State Evolution at Lattice Index {lattice_index}")
+		plt.xlabel("Time Step")
+		plt.ylabel(f"State at Index {lattice_index}")
+		plt.grid(True, alpha=0.3)
+		plt.tight_layout()
+		plt.show()
+	def vis_lattice_state(self):
+     #展示迭代N步后整个格点的状态分布
+		N = 100
+		x0 = self.x0
+		z0 = self.z0
+		import matplotlib.pyplot as plt	
+		x0 = np.asarray(x0, dtype=float).copy()
+		z0 = float(z0)
+		if x0.size != self.L:
+			raise ValueError(f"x0 length must equal L={self.L}")
+		x_values = np.empty((N, self.L), dtype=float)
+		z = z0
+		x = x0.copy()
+		for t in range(N):
+			x, z = self.step(x, z)
+			x_values[t, :] = x
+		#散点图绘制x_values[-1, :]的分布情况
+		plt.figure(figsize=(10, 6))
+		plt.scatter(range(self.L), x_values[-1, :], s=20, alpha=0.7)
+		plt.title(f"State Distribution at Final Time Step (N={N})")
+		plt.xlabel("Lattice Index")	
+		plt.ylabel("State Value")
+		plt.grid(True, alpha=0.3)
+		plt.tight_layout()
+		plt.show()
+  
+	def generate_rdseq(self, N: int) -> np.ndarray:
+		"""Generate the (N, L) random matrix using the optimized path."""
+		return self.generate_rdseq_fast(N)
+
+	def generate_rdseq_fast(self, N: int) -> np.ndarray:
+		"""Generate the (N, L) random matrix with preallocation and Numba."""
+		if not isinstance(N, int) or N <= 0:
+			raise ValueError("N must be a positive integer")
+
+		x0 = np.asarray(self.x0, dtype=float).copy()
+		if x0.size != self.L:
+			raise ValueError(f"x0 length must equal L={self.L}")
+
+		if _generate_rdseq_numba is not None:
+			return _generate_rdseq_numba(
+				x0=x0,
+				p_idx=np.asarray(self._p_idx, dtype=np.int64),
+				q_idx=np.asarray(self._q_idx, dtype=np.int64),
+				mu=float(self.mu),
+				a=float(self.a),
+				is_mod=bool(self.is_mod),
+				N=N,
+			)
+
+		fx_left = np.empty(self.L, dtype=float)
+		fx_right = np.empty(self.L, dtype=float)
+		sum_buffer = np.empty(self.L, dtype=float)
+		fx_p = np.empty(self.L, dtype=float)
+		fx_q = np.empty(self.L, dtype=float)
+		x_values = np.empty((N, self.L), dtype=float)
+		x = x0.copy()
+
+		for t in range(N):
+			fx = np.asarray(self.f(x), dtype=float)
+			fx_left[0] = fx[-1]
+			fx_left[1:] = fx[:-1]
+			fx_right[-1] = fx[0]
+			fx_right[:-1] = fx[1:]
+			np.add(fx_left, fx, out=sum_buffer)
+			np.add(sum_buffer, fx_right, out=sum_buffer)
+			np.multiply(sum_buffer, 2.0 * np.pi, out=sum_buffer)
+			np.cos(sum_buffer, out=sum_buffer)
+			np.subtract(1.0, sum_buffer, out=sum_buffer)
+			np.take(fx, self._p_idx, out=fx_p)
+			np.take(fx, self._q_idx, out=fx_q)
+			np.multiply(fx_p, fx_p, out=fx_p)
+			np.multiply(fx_q, fx_q, out=fx_q)
+			np.add(fx_p, fx_q, out=fx_p)
+			np.sqrt(fx_p, out=fx_p)
+			np.multiply(fx_p, 0.1, out=fx_p)
+			np.add(sum_buffer, fx_p, out=x)
+			if self.is_mod:
+				np.mod(x, 1.0, out=x)
+			x_values[t, :] = x
+
+		return x_values
 if __name__ == "__main__":
 	L = 100
 	params = {
 		"mu": 5,
 		"lam": 5,
-		"a": 100,
-		"b": 200,
+		"a": 20,
+		"b": 20,
 		"xi": 1,
 		"eta": 1,
 	}
@@ -1509,29 +1712,32 @@ if __name__ == "__main__":
 	x0 = np.random.rand(L)
 	z0 = np.random.rand()
 	cml = SalomoncouplingCML(L=L, params=params, initstate={"x0": x0, "z0": z0})
+	# cml.generate_rdseq()
+	# cml.vis_lattice_n(lattice_index=25)
+	# cml.vis_lattice_state()
 
 	# 示例 1: 分叉图
 	# cml.Bifurcation_diagram(
 	# 	x0=x0,
 	# 	z0=z0,
-	# 	lattice_index=25,
-	# 	param_name="mu",
-	# 	param_range=np.linspace(0, 5, 400),
-	# 	steps=1000,
-	# 	discard=200,
+	# 	lattice_index=1,
+	# 	param_name="a",
+	# 	param_range=np.linspace(0, 5, 1000),
+	# 	steps=500,
+	# 	discard=50,
 	# )
 
 	# 示例 2: 最小 Lyapunov 双参数扫描 + KED/KEB 可视化
 	# demo_scan_path = "mywork/output/salomon_lyapunov_scan.npz"
 	# cml.lyap_scan(
 	# 	param1="mu",
-	# 	values1=np.linspace(0, 5.0, 25),
+	# 	values1=np.linspace(3, 10.0, 10),
 	# 	param2="a",
-	# 	values2=np.linspace(0, 5.0, 25),
+	# 	values2=np.linspace(3, 10.0, 10),
 	# 	x0=x0,
 	# 	z0=z0,
-	# 	n=100,
-	# 	discard=40,
+	# 	n=200,
+	# 	discard=50,
 	# 	epsilon=1e-12,
 	# 	save_path="mywork/output/salomon_lyapunov_scan_mu&a.npz",
 	# 	timestamp_on_exists=True,
@@ -1560,9 +1766,9 @@ if __name__ == "__main__":
 	# 示例 5: 平均信息熵 Hd(p1, p2) 双参数扫描 + 线框图
 	# cml.avg_IE(
 	# 	param1="mu",
-	# 	values1=np.linspace(1, 5, 50),
+	# 	values1=np.linspace(0, 5, 50),
 	# 	param2="a",
-	# 	values2=np.linspace(1, 5, 50),
+	# 	values2=np.linspace(0, 5, 50),
 	# 	n=1000,
 	# 	discard=200,
 	# 	n_states=10,
@@ -1574,7 +1780,7 @@ if __name__ == "__main__":
 	# # 示例 6: 信息熵IE
 	# cml.IE(
 	# 	param_name="a",
-	# 	param_range=np.linspace(1, 5, 50),
+	# 	param_range=np.linspace(0, 5, 50),
 	# 	n=1000,
 	# 	discard=200,
 	# 	n_states=10,
@@ -1583,22 +1789,18 @@ if __name__ == "__main__":
 	# 	save_fig_path="mywork/output/salomon_ie_a.png",
 	# )
  
-
-	# 示例 7: 互信息 AMI（扫描与绘图分离）
-	cml.ami_scan(
-		param1="mu",
-		values1=np.linspace(1, 5.0, 41),
-		param2="a",
-		values2=np.linspace(1, 5.0, 41),
-		x0=x0,
-		z0=z0,
-		n=1000,
-		discard=200,
-		n_states=10,
-		save_path="mywork/output/salomon_ami_scan_mu_a.npz",
-		timestamp_on_exists=True,
-	)
-	cml.plot_ami_wireframe(
-		data_path="mywork/output/salomon_ami_scan_mu_a.npz",
-		save_fig_path="mywork/output/salomon_ami_wireframe_mu_a.png",
-	)
+	# 示例 7: 平均互信息 Ld(p1, p2) 双参数扫描 + 线框图
+	# cml.AMI_scan(
+	# 	param1="mu",
+	# 	values1=np.linspace(1, 10, 25),
+	# 	param2="a",
+	# 	values2=np.linspace(1, 10, 25),
+	# 	x0=x0,
+	# 	z0=z0,
+	# 	n=150,
+	# 	discard=50,
+	# 	n_states=10,
+	# 	save_path="mywork/output/salomon_avg_ami_mu_a.npz",
+	# 	plot=True,
+	# 	save_fig_path="mywork/output/salomon_avg_ami_mu_a.png",
+	# )
