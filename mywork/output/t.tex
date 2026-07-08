@@ -1,0 +1,38 @@
+\documentclass{article}
+\usepackage{booktabs} % 优化表格线
+\usepackage{amsmath}  % 提供数学符号
+\usepackage{CJKutf8}  % 支持中文显示
+
+\begin{document}
+\begin{CJK*}{UTF8}{gbsn}
+
+\begin{table}[htbp]
+\centering
+\caption{美国国家标准与技术研究院（NIST）SP 800-22的测试结果。}
+\label{tab:nist_results}
+\begin{tabular}{lccc}
+\toprule
+\textbf{测试} & \textbf{P值} & \textbf{通过率} & \textbf{结果} \\
+\midrule
+频率 (Frequency) & 0.115387 & 100/100 & 通过 \\
+块频率 (BlockFrequency) & 0.494392 & 100/100 & 通过 \\
+累积和 (正向) (CumulativeSums) & 0.181557 & 100/100 & 通过 \\
+累积和 (反向) (CumulativeSums) & 0.026948 & 99/100 & 通过 \\
+游程 (Runs) & 0.779188 & 100/100 & 通过 \\
+最长游程 (LongestRun) & 0.616305 & 99/100 & 通过 \\
+等级 (Rank) & 0.191687 & 97/100 & 通过 \\
+FFT (FFT) & 0.964295 & 98/100 & 通过 \\
+非重叠模板 (NonOverlappingTemplate) & $0.002971 \sim 0.997823$ & 95/100 $\sim$ 100/100 & 未通过 (部分) \\
+重叠模板 (OverlappingTemplate) & 0.514124 & 100/100 & 通过 \\
+通用 (Universal) & 0.319084 & 100/100 & 通过 \\
+近似熵 (ApproximateEntropy) & 0.867692 & 99/100 & 通过 \\
+随机游走 (RandomExcursions) & $0.195163 \sim 0.949602$ & 64/66 $\sim$ 66/66 & 通过 \\
+随机游走变体 (RandomExcursionsVariant) & $0.054199 \sim 0.931952$ & 63/66 $\sim$ 66/66 & 通过 \\
+序列号 (Serial) & $0.153763 \sim 0.883171$ & 98/100 $\sim$ 99/100 & 通过 \\
+线性复杂度 (LinearComplexity) & 0.595549 & 100/100 & 通过 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{CJK*}
+\end{document}
