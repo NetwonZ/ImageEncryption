@@ -6,3 +6,5 @@ mywork/.vscode/
 mywork/.claude/
 mywork/.idea/
 mywork/output/
+papers/__pycache__/
+papers/.vscode/
