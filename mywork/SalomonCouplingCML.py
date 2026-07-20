@@ -19,22 +19,18 @@ if njit is not None:
 	@njit(cache=True)
 	def _step_numba(
 		x: np.ndarray,
-		z: float,
 		p_idx: np.ndarray,
 		q_idx: np.ndarray,
 		mu: float,
-		lam: float,
-		a: float,
-		b: float,
+		v: float,
 		alpha: float,
 		beta: float,
 		is_mod: bool,
-	) -> tuple[np.ndarray, float]:
+	) -> np.ndarray:
 		L = x.size
 		fx = np.empty(L, dtype=np.float64)
 		x_next = np.empty(L, dtype=np.float64)
 		factor_x = 5.0 + 3.0 * mu
-		factor_z = 5.0 + 3.0 * lam
 		inner_factor = 15.0 * math.pi
 		angle_factor = 2.0 * math.pi
 		alpha_scale = 10.0 ** alpha
@@ -42,7 +38,7 @@ if njit is not None:
 
 		for i in range(L):
 			xi = x[i]
-			fx[i] = abs(math.sin(factor_x * (1.0 - (a * xi * math.sin(inner_factor * xi * (1.0 - xi))))))
+			fx[i] = abs(math.sin(factor_x * (1.0 - (v * xi * math.sin(inner_factor * xi * (1.0 - xi))))))
 
 		for i in range(L):
 			left = fx[i - 1] if i > 0 else fx[L - 1]
@@ -55,10 +51,7 @@ if njit is not None:
 				value = value % 1.0
 			x_next[i] = value
 
-		z_next = abs(math.sin(factor_z * (1.0 - (b * z * math.sin(inner_factor * z * (1.0 - z))))))
-		if is_mod:
-			z_next = z_next % 1.0
-		return x_next, float(z_next)
+		return x_next
 
 	@njit(parallel=True, cache=True)
 	def _generate_rdseq_numba(
@@ -66,7 +59,7 @@ if njit is not None:
 		p_idx: np.ndarray,
 		q_idx: np.ndarray,
 		mu: float,
-		a: float,
+		v: float,
 		alpha: float,
 		beta: float,
 		is_mod: bool,
@@ -84,7 +77,7 @@ if njit is not None:
 		for t in range(N):
 			for i in prange(L):
 				xi = x[i]
-				fx[i] = abs(math.sin(factor * (1.0 - (a * xi * math.sin(inner_factor * xi * (1.0 - xi))))))
+				fx[i] = abs(math.sin(factor * (1.0 - (v * xi * math.sin(inner_factor * xi * (1.0 - xi))))))
 
 			for i in prange(L):
 				left = fx[i - 1] if i > 0 else fx[L - 1]
@@ -112,8 +105,8 @@ class SalomoncouplingCML:
 
 	Core update rule:
 		x_{n+1}(i) = 10^alpha - cos(2*pi*(f(x_{i-1}) + f(x_i) + f(x_{i+1})))
-					 + 10^beta*sqrt(f(x_p)^2 + f(x_q)^2)
-	f(x) = |sin((5 + 3 * mu) * (1 - (a * x * sin(15 * pi * x * (1 - x)))))|
+		 + 10^beta*sqrt(f(x_p)^2 + f(x_q)^2)
+	f(x) = |sin((5 + 3 * mu) * (1 - (v * x * sin(15 * pi * x * (1 - x)))))|
 	p/q index rule:
 		p = ((1 + xi) * i) % L
 		q = ((eta + xi*eta + 1) * i) % L
@@ -125,74 +118,81 @@ class SalomoncouplingCML:
 		params: dict[str, float],
 		initstate: dict[str, np.ndarray | float],
 		is_mod: bool = True,
+		user_key: str | None = None,
+		image_path: str | Path | None = None,
 	) -> None:
 		if int(L) <= 0:
 			raise ValueError("L must be a positive integer.")
 
-		required = {"mu", "lam", "a", "b", "alpha", "beta", "xi", "eta"}
-		missing = required - set(params.keys())
-		if missing:
-			raise ValueError(f"Missing required params: {sorted(missing)}")
+		if params is not None and initstate is not None:
+			required = {"mu", "v", "alpha", "beta", "xi", "eta"}
+			missing = required - set(params.keys())
+			if missing:
+				raise ValueError(f"Missing required params: {sorted(missing)}")
 
-		if "x0" not in initstate or "z0" not in initstate:
-			raise ValueError("initstate must contain keys 'x0' and 'z0'.")
+			if "x0" not in initstate:
+				raise ValueError("initstate must contain key 'x0'.")
 
-		self.L = int(L)
-		self.mu = float(params["mu"])
-		self.lam = float(params["lam"])
-		self.a = float(params["a"])
-		self.b = float(params["b"])
-		self.alpha = float(params["alpha"])
-		self.beta = float(params["beta"])
-		self.xi = int(params["xi"])
-		self.eta = int(params["eta"])
-		self.is_mod = bool(is_mod)
+			self.L = int(L)
+			self.mu = float(params["mu"])
+			self.v = float(params["v"])
+			self.alpha = float(params["alpha"])
+			self.beta = float(params["beta"])
+			self.xi = int(params["xi"])
+			self.eta = int(params["eta"])
+			self.is_mod = bool(is_mod)
 
-		self.x0 = np.asarray(initstate["x0"], dtype=float).copy()
-		self.z0 = float(initstate["z0"])
-		if self.x0.size != self.L:
-			raise ValueError(f"x0 length must equal L={self.L}")
+			self.x0 = np.asarray(initstate["x0"], dtype=float).copy()
+			if self.x0.size != self.L:
+				raise ValueError(f"x0 length must equal L={self.L}")
 
+		if user_key is None:
+			import random
+			seed  = 2026
+			random.seed(seed)
+			binary_key_str = format(random.getrandbits(256), "0256b")
+			user_key = binary_key_str
+
+		if image_path is not None:
+			from . KeyStream import keystream_generation
+			r = keystream_generation(L, image_path, user_key)
+			self.L = int(L)
+			self.mu = float(r["mu"])
+			self.v = float(r["v"])
+			self.alpha = float(r["alpha"])
+			self.beta = float(r["beta"])
+			self.xi = 1
+			self.eta = 1
+   
 		self.original_params = {
 			"mu": self.mu,
-			"lam": self.lam,
-			"a": self.a,
-			"b": self.b,
+			"v": self.v,
 			"alpha": self.alpha,
 			"beta": self.beta,
 			"xi": self.xi,
 			"eta": self.eta,
 		}
+		self._sync_index_rule()
+		self._build_symbolic_functions()
 		self.last_scan_path: str | None = None
 		self.last_ie_scan_path: str | None = None
 		self.last_ami_scan_path: str | None = None
-
-		self._sync_index_rule()
-		self._build_symbolic_functions()
+      
 
 	@staticmethod
-	def _salomon_f_expr(x: sp.Symbol, mu: sp.Symbol, a: sp.Symbol) -> sp.Expr:
-		return sp.Abs(sp.sin((5 + 3 * mu) * (1 - (a * x * sp.sin(15 * sp.pi * x * (1 - x))))))
-
-	@staticmethod
-	def _salomon_g_expr(z: sp.Symbol, lam: sp.Symbol, b: sp.Symbol) -> sp.Expr:
-		return sp.Abs(sp.sin((5 + 3 * lam) * (1 - (b * z * sp.sin(15 * sp.pi * z * (1 - z))))))
+	def _salomon_f_expr(x: sp.Symbol, mu: sp.Symbol, v: sp.Symbol) -> sp.Expr:
+		return sp.Abs(sp.sin((5 + 3 * mu) * (1 - (v * x * sp.sin(15 * sp.pi * x * (1 - x))))))
 
 	def _build_symbolic_functions(self) -> None:
 		x = sp.Symbol("x", real=True)
-		z = sp.Symbol("z", real=True)
 		mu = sp.Symbol("mu", real=True)
-		lam = sp.Symbol("lam", real=True)
-		a = sp.Symbol("a", real=True)
-		b = sp.Symbol("b", real=True)
+		v = sp.Symbol("v", real=True)
 
-		f_expr = self._salomon_f_expr(x, mu, a)
-		g_expr = self._salomon_g_expr(z, lam, b)
+		f_expr = self._salomon_f_expr(x, mu, v)
 		f_diff_expr = sp.diff(f_expr, x)
 
-		self._f = sp.lambdify((x, mu, a), f_expr, modules="numpy")
-		self._g = sp.lambdify((z, lam, b), g_expr, modules="numpy")
-		self._f_diff = sp.lambdify((x, mu, a), f_diff_expr, modules="numpy")
+		self._f = sp.lambdify((x, mu, v), f_expr, modules="numpy")
+		self._f_diff = sp.lambdify((x, mu, v), f_diff_expr, modules="numpy")
 
 	def _build_neighbor_indices(self) -> None:
 		i = np.arange(self.L, dtype=int)
@@ -227,30 +227,23 @@ class SalomoncouplingCML:
 		return path.with_name(f"{path.stem}_{stamp}{path.suffix}")
 
 	def f(self, x: np.ndarray | float) -> np.ndarray | float:
-		return self._f(x, self.mu, self.a)
-
-	def g(self, z: float) -> float:
-		return float(self._g(z, self.lam, self.b))
+		return self._f(x, self.mu, self.v)
 
 	def _f_prime(self, x: np.ndarray) -> np.ndarray:
-		return np.asarray(self._f_diff(x, self.mu, self.a), dtype=float)
+		return np.asarray(self._f_diff(x, self.mu, self.v), dtype=float)
 
-	def step(self, x: np.ndarray, z: float) -> tuple[np.ndarray, float]:
+	def step(self, x: np.ndarray) -> np.ndarray:
 		x = np.asarray(x, dtype=float)
 		if x.size != self.L:
 			raise ValueError(f"x length must equal L={self.L}")
 
-		z = float(z)
 		if _step_numba is not None:
 			return _step_numba(
 				x=x,
-				z=z,
 				p_idx=np.asarray(self._p_idx, dtype=np.int64),
 				q_idx=np.asarray(self._q_idx, dtype=np.int64),
 				mu=float(self.mu),
-				lam=float(self.lam),
-				a=float(self.a),
-				b=float(self.b),
+				v=float(self.v),
 				alpha=float(self.alpha),
 				beta=float(self.beta),
 				is_mod=bool(self.is_mod),
@@ -268,14 +261,11 @@ class SalomoncouplingCML:
 		if self.is_mod:
 			x_next = np.mod(x_next, 1.0)
 
-		z_next = np.mod(self.g(z), 1.0)
-		return x_next, float(z_next)
-
+		return x_next
 
 	def iterate_states(
 		self,
 		x0: np.ndarray,
-		z0: float,
 		arrL: int,
 	) -> np.ndarray:
 		"""Iterate the map arrL times and return all generated x states.
@@ -287,16 +277,21 @@ class SalomoncouplingCML:
 			raise ValueError("arrL must be a positive integer")
 
 		x = np.asarray(x0, dtype=float).copy()
-		z = float(z0)
 		if x.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 
 		states = np.empty((arrL, self.L), dtype=float)
 		for i in range(arrL):
-			x, z = self.step(x, z)
+			x = self.step(x)
 			states[i, :] = x
 
 		return states
+
+	def KeyMatrix_generation():
+		"""根据初始状态生成用于加密的秘钥矩阵/序列"""
+
+		pass
+
 
 	#sym:generate_random_bits_file
 	def generate_random_bits_file(
@@ -304,7 +299,6 @@ class SalomoncouplingCML:
 		n_bits: int,
 		save_path: str = "mywork/output/salomonV2_random.bin",
 		x0: np.ndarray | None = None,
-		z0: float | None = None,
 		warmup: int = 200,
 		scale_factor: float = 10**10,
 		bitorder: str = "little",
@@ -358,12 +352,11 @@ class SalomoncouplingCML:
 				print("Invalid input. Please type 's' or 'd'.")
 
 		x = np.asarray(self.x0 if x0 is None else x0, dtype=float).copy()
-		z = float(self.z0 if z0 is None else z0)
 		if x.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 
 		for _ in range(warmup):
-			x, z = self.step(x, z)
+			x = self.step(x)
 
 		if mode_normalized == "overall":
 			bits_per_step = self.L * 8
@@ -380,7 +373,7 @@ class SalomoncouplingCML:
 			) as progress:
 				task = progress.add_task("Generating Salomon random bits (overall)", total=steps)
 				for _ in range(steps):
-					x, z = self.step(x, z)
+					x = self.step(x)
 					x_frac = np.mod(x, 1.0)
 					x_scaled = np.floor(x_frac * scale_factor).astype(np.uint64)
 					row_bytes = np.mod(x_scaled, 256).astype(np.uint8)
@@ -406,7 +399,7 @@ class SalomoncouplingCML:
 					total=steps,
 				)
 				for _ in range(steps):
-					x, z = self.step(x, z)
+					x = self.step(x)
 					x_value = float(np.mod(x[lattice_index], 1.0))
 					x_scaled = int(np.floor(x_value * scale_factor)) % 256
 					row_bits = np.unpackbits(np.array([x_scaled], dtype=np.uint8), bitorder=bitorder)
@@ -481,7 +474,6 @@ class SalomoncouplingCML:
 	def lyapunov_spectrum(
 		self,
 		x0: np.ndarray,
-		z0: float,
 		n: int,
 		discard: int = 100,
 		epsilon: float = 1e-12,
@@ -495,7 +487,6 @@ class SalomoncouplingCML:
 			raise ValueError("epsilon must be positive")
 
 		x = np.asarray(x0, dtype=float).copy()
-		z = float(z0)
 		if x.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 
@@ -512,7 +503,7 @@ class SalomoncouplingCML:
 				d = np.abs(np.diag(R))
 				log_sum += np.log(d + epsilon)
 
-			x, z = self.step(x, z)
+			x = self.step(x)
 
 		spectrum = log_sum / float(n)
 		return np.sort(spectrum)[::-1]
@@ -524,7 +515,6 @@ class SalomoncouplingCML:
 		param2: str,
 		values2: np.ndarray,
 		x0: np.ndarray,
-		z0: float,
 		n: int,
 		discard: int = 100,
 		epsilon: float = 1e-12,
@@ -602,7 +592,6 @@ class SalomoncouplingCML:
 
 						spectra[i, j, :] = self.lyapunov_spectrum(
 							x0=x0_arr,
-							z0=float(z0),
 							n=n,
 							discard=discard,
 							epsilon=epsilon,
@@ -680,10 +669,9 @@ class SalomoncouplingCML:
 	#sym:IE
 	def IE(
 		self,
-		param_name: str = "lam",
+		param_name: str = "v",
 		param_range: np.ndarray | None = None,
 		x0: np.ndarray | None = None,
-		z0: float | None = None,
 		n: int = 1000,
 		discard: int = 200,
 		n_states: int = 10,
@@ -723,7 +711,6 @@ class SalomoncouplingCML:
 			raise ValueError("param_range must not be empty")
 
 		x0_arr = np.asarray(self.x0 if x0 is None else x0, dtype=float).copy()
-		z0_val = float(self.z0 if z0 is None else z0)
 		if x0_arr.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 
@@ -776,14 +763,13 @@ class SalomoncouplingCML:
 					self._sync_index_rule()
 
 					x = x0_arr.copy()
-					z = z0_val
 
 					for _ in range(discard):
-						x, z = self.step(x, z)
+						x = self.step(x)
 
 					states = np.empty((n, self.L), dtype=float)
 					for t in range(n):
-						x, z = self.step(x, z)
+						x = self.step(x)
 						states[t, :] = x
 
 					hd, h_each = self.average_information_entropy(states=states, n_states=n_states)
@@ -805,9 +791,7 @@ class SalomoncouplingCML:
 			n_states=n_states,
 			L=self.L,
 			mu=float(self.original_params["mu"]),
-			lam=float(self.original_params["lam"]),
-			a=float(self.original_params["a"]),
-			b=float(self.original_params["b"]),
+			v=float(self.original_params["v"]),
 			xi=int(self.original_params["xi"]),
 			eta=int(self.original_params["eta"]),
 		)
@@ -895,10 +879,9 @@ class SalomoncouplingCML:
 		self,
 		param1: str = "mu",
 		values1: np.ndarray | None = None,
-		param2: str = "lam",
+		param2: str = "v",
 		values2: np.ndarray | None = None,
 		x0: np.ndarray | None = None,
-		z0: float | None = None,
 		n: int = 1000,
 		discard: int = 200,
 		n_states: int = 10,
@@ -945,7 +928,6 @@ class SalomoncouplingCML:
 				raise ValueError(f"{name} scan values must be integers")
 
 		x0_arr = np.asarray(self.x0 if x0 is None else x0, dtype=float).copy()
-		z0_val = float(self.z0 if z0 is None else z0)
 		if x0_arr.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 
@@ -999,11 +981,10 @@ class SalomoncouplingCML:
 						self._sync_index_rule()
 
 						x = x0_arr.copy()
-						z = z0_val
 						for _ in range(discard):
-							x, z = self.step(x, z)
+							x = self.step(x)
 
-						states = self.iterate_states(x0=x, z0=z, arrL=n)
+						states = self.iterate_states(x0=x, arrL=n)
 						ld, _ = self.average_mutual_information(states=states, n_states=n_states)
 						ld_grid[i, j] = ld
 
@@ -1023,9 +1004,7 @@ class SalomoncouplingCML:
 			n_states=n_states,
 			L=self.L,
 			mu=self.mu,
-			lam=self.lam,
-			a=self.a,
-			b=self.b,
+			v=self.v,
 			xi=self.xi,
 			eta=self.eta,
 			metric_name="average_mutual_information",
@@ -1042,10 +1021,9 @@ class SalomoncouplingCML:
 		self,
 		param1: str = "mu",
 		values1: np.ndarray | None = None,
-		param2: str = "lam",
+		param2: str = "v",
 		values2: np.ndarray | None = None,
 		x0: np.ndarray | None = None,
-		z0: float | None = None,
 		n: int = 1000,
 		discard: int = 200,
 		n_states: int = 10,
@@ -1066,7 +1044,6 @@ class SalomoncouplingCML:
 			param2=param2,
 			values2=np.asarray(values2, dtype=float),
 			x0=x0,
-			z0=z0,
 			n=n,
 			discard=discard,
 			n_states=n_states,
@@ -1084,10 +1061,9 @@ class SalomoncouplingCML:
 		self,
 		param1: str = "mu",
 		values1: np.ndarray | None = None,
-		param2: str = "lam",
+		param2: str = "v",
 		values2: np.ndarray | None = None,
 		x0: np.ndarray | None = None,
-		z0: float | None = None,
 		n: int = 1000,
 		discard: int = 200,
 		n_states: int = 10,
@@ -1099,7 +1075,7 @@ class SalomoncouplingCML:
 		"""Scan two parameters, compute Hd, and optionally plot a wireframe.
 
 		Default parameter ranges follow the paper-like setting:
-			mu in [3.6, 4.0], e(=lam) in [0, 1].
+			mu in [3.6, 4.0], v in [0, 1].
 		"""
 		if not hasattr(self, param1):
 			raise ValueError(f"Unknown parameter: {param1}")
@@ -1127,7 +1103,6 @@ class SalomoncouplingCML:
 			raise ValueError("values1 and values2 must not be empty")
 
 		x0_arr = np.asarray(self.x0 if x0 is None else x0, dtype=float).copy()
-		z0_val = float(self.z0 if z0 is None else z0)
 		if x0_arr.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 
@@ -1181,14 +1156,13 @@ class SalomoncouplingCML:
 						self._sync_index_rule()
 
 						x = x0_arr.copy()
-						z = z0_val
 
 						for _ in range(discard):
-							x, z = self.step(x, z)
+							x = self.step(x)
 
 						states = np.empty((n, self.L), dtype=float)
 						for t in range(n):
-							x, z = self.step(x, z)
+							x = self.step(x)
 							states[t, :] = x
 
 						hd, _ = self.average_information_entropy(states=states, n_states=n_states)
@@ -1289,7 +1263,7 @@ class SalomoncouplingCML:
 			param_values = np.asarray(data["param_range"], dtype=float)
 		else:
 			raise KeyError(f"'param_values' not found in file: {data_path}")
-		param_name = str(data["param_name"]) if "param_name" in data else "lam"
+		param_name = str(data["param_name"]) if "param_name" in data else "v"
 
 		if ie_grid.ndim != 2:
 			raise ValueError("ie_grid must be a 2D array")
@@ -1364,7 +1338,7 @@ class SalomoncouplingCML:
 		v1 = np.asarray(data["param1_values"], dtype=float)
 		v2 = np.asarray(data["param2_values"], dtype=float)
 		p1_name = str(data["param1_name"]) if "param1_name" in data else "mu"
-		p2_name = str(data["param2_name"]) if "param2_name" in data else "lam"
+		p2_name = str(data["param2_name"]) if "param2_name" in data else "v"
 
 		expected_shape = (v1.size, v2.size)
 		if hd_grid.shape != expected_shape:
@@ -1392,7 +1366,7 @@ class SalomoncouplingCML:
 			title = f"Average Information Entropy Wireframe ({p1_name} vs {p2_name})"
 		ax.set_title(title)
 		ax.set_xlabel(p1_name)
-		ax.set_ylabel("e (lam)" if p2_name == "lam" else p2_name)
+		ax.set_ylabel("v" if p2_name == "v" else p2_name)
 		ax.set_zlabel("Hd")
 		ax.set_xlim(float(np.min(v1)), float(np.max(v1)))
 		ax.set_ylim(float(np.min(v2)), float(np.max(v2)))
@@ -1437,7 +1411,7 @@ class SalomoncouplingCML:
 		v1 = np.asarray(data["param1_values"], dtype=float)
 		v2 = np.asarray(data["param2_values"], dtype=float)
 		p1_name = str(data["param1_name"]) if "param1_name" in data else "mu"
-		p2_name = str(data["param2_name"]) if "param2_name" in data else "lam"
+		p2_name = str(data["param2_name"]) if "param2_name" in data else "v"
 
 		expected_shape = (v1.size, v2.size)
 		if ld_grid.shape != expected_shape:
@@ -1460,7 +1434,7 @@ class SalomoncouplingCML:
 			title = f"Average Mutual Information Wireframe ({p1_name} vs {p2_name})"
 		ax.set_title(title)
 		ax.set_xlabel(p1_name)
-		ax.set_ylabel("e (lam)" if p2_name == "lam" else p2_name)
+		ax.set_ylabel("v" if p2_name == "v" else p2_name)
 		ax.set_zlabel("Ld")
 		ax.set_xlim(float(np.min(v1)), float(np.max(v1)))
 		ax.set_ylim(float(np.min(v2)), float(np.max(v2)))
@@ -1529,7 +1503,7 @@ class SalomoncouplingCML:
 			title = f"Average Information Entropy Wireframe ({p1_name} vs {p2_name})"
 		ax.set_title(title)
 		ax.set_xlabel(p1_name)
-		ax.set_ylabel("e (lam)" if p2_name == "lam" else p2_name)
+		ax.set_ylabel("v" if p2_name == "v" else p2_name)
 		ax.set_zlabel("Hd")
 		ax.set_xlim(float(np.min(v1)), float(np.max(v1)))
 		ax.set_ylim(float(np.min(v2)), float(np.max(v2)))
@@ -1622,7 +1596,6 @@ class SalomoncouplingCML:
 	def Bifurcation_diagram(
 		self,
 		x0,
-		z0,
 		lattice_index,
 		param_name,
 		param_range,
@@ -1641,7 +1614,6 @@ class SalomoncouplingCML:
 			raise ValueError("discard must be a non-negative integer")
 
 		x0 = np.asarray(x0, dtype=float).copy()
-		z0 = float(z0)
 		if x0.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 
@@ -1671,13 +1643,12 @@ class SalomoncouplingCML:
 					self._sync_index_rule()
 
 					x = x0.copy()
-					z = z0
 
 					for _ in range(discard):
-						x, z = self.step(x, z)
+						x = self.step(x)
 
 					for _ in range(steps):
-						x, z = self.step(x, z)
+						x = self.step(x)
 						y_scatter[pos] = x[int(lattice_index)]
 						pos += 1
 
@@ -1686,9 +1657,9 @@ class SalomoncouplingCML:
 			self._reset_params()
 
 		plt.figure(figsize=(10, 6))
-		plt.scatter(x_scatter, y_scatter,marker='.', color="blue", s=5, alpha=1, edgecolors="none")
+		plt.scatter(x_scatter, y_scatter, marker='.', color="blue", s=13, alpha=1, edgecolors="none")
 		plt.title(f"Bifurcation Diagram")
-		plt.xlabel("v")
+		plt.xlabel(f"{param_name}")
 		plt.ylabel(f"State at Index {lattice_index}")
 		plt.xlim(float(np.min(param_values)), float(np.max(param_values)))
 		plt.ylim(0, 1)
@@ -1698,21 +1669,146 @@ class SalomoncouplingCML:
 
 		return x_scatter, y_scatter
 
+	def Bifurcation_diagram_2D(
+		self,
+		x0: np.ndarray,
+		lattice_index: int,
+		param1_name: str,
+		param1_range: np.ndarray,
+		param2_name: str,
+		param2_range: np.ndarray,
+		steps: int = 2000,
+		discard: int = 1000,
+		save_fig_path: str | None = None,
+	):
+		"""Scan two parameters and draw a 3D two-parameter bifurcation diagram.
+
+		The x- and y-axes are the two scanned parameters. The z-axis contains
+		the state of ``lattice_index`` after each retained iteration, producing
+		a point cloud like the usual two-parameter bifurcation diagram.
+		"""
+		import matplotlib.pyplot as plt
+
+		if not hasattr(self, param1_name):
+			raise ValueError(f"Unknown parameter: {param1_name}")
+		if not hasattr(self, param2_name):
+			raise ValueError(f"Unknown parameter: {param2_name}")
+		if param1_name == param2_name:
+			raise ValueError("param1_name and param2_name must be different parameters")
+		if not (0 <= int(lattice_index) < self.L):
+			raise ValueError(f"lattice_index must be in [0, {self.L - 1}]")
+		if not isinstance(steps, int) or steps <= 0:
+			raise ValueError("steps must be a positive integer")
+		if not isinstance(discard, int) or discard < 0:
+			raise ValueError("discard must be a non-negative integer")
+
+		x0_arr = np.asarray(x0, dtype=float).copy()
+		if x0_arr.size != self.L:
+			raise ValueError(f"x0 length must equal L={self.L}")
+
+		values1 = np.asarray(param1_range, dtype=float).reshape(-1)
+		values2 = np.asarray(param2_range, dtype=float).reshape(-1)
+		if values1.size == 0 or values2.size == 0:
+			raise ValueError("param1_range and param2_range must not be empty")
+		for name, values in ((param1_name, values1), (param2_name, values2)):
+			if name in ("xi", "eta") and not np.allclose(values, np.rint(values)):
+				raise ValueError(f"{name} scan values must be integers")
+
+		total_points = int(values1.size * values2.size * steps)
+		param1_scatter = np.empty(total_points, dtype=float)
+		param2_scatter = np.empty(total_points, dtype=float)
+		state_scatter = np.empty(total_points, dtype=float)
+		pos = 0
+
+		try:
+			with Progress(
+				TextColumn("[bold cyan]{task.description}"),
+				BarColumn(),
+				TaskProgressColumn(),
+				TimeElapsedColumn(),
+				TimeRemainingColumn(),
+			) as progress:
+				task = progress.add_task(
+					f"2D bifurcation scan: {param1_name} x {param2_name}",
+					total=int(values1.size * values2.size),
+				)
+
+				for value1 in values1:
+					for value2 in values2:
+						self._set_param_value(param1_name, float(value1))
+						self._set_param_value(param2_name, float(value2))
+						self._sync_index_rule()
+
+						x = x0_arr.copy()
+						for _ in range(discard):
+							x = self.step(x)
+
+						for _ in range(steps):
+							x = self.step(x)
+							param1_scatter[pos] = value1
+							param2_scatter[pos] = value2
+							state_scatter[pos] = x[int(lattice_index)]
+							pos += 1
+
+						progress.update(task, advance=1)
+		finally:
+			self._reset_params()
+
+		fig = plt.figure(figsize=(10, 8))
+		ax = fig.add_subplot(111, projection="3d")
+		ax.scatter(
+			param1_scatter,
+			param2_scatter,
+			state_scatter,
+			marker=".",
+			s=2.0,
+			c="blue",
+			alpha=0.75,
+			linewidths=0,
+		)
+		ax.set_title(f"2D Bifurcation Diagram ({param1_name} vs {param2_name})")
+		ax.set_xlabel(param1_name)
+		ax.set_ylabel(param2_name)
+		# Matplotlib's 3D z-label can be clipped by the projected axis.
+		# Place the label at figure level so the full text remains visible.
+		ax.set_zlabel("")
+		ax.set_xlim(float(np.min(values1)), float(np.max(values1)))
+		ax.set_ylim(float(np.min(values2)), float(np.max(values2)))
+		if self.is_mod:
+			ax.set_zlim(0.0, 1.0)
+		ax.grid(False)
+		ax.view_init(elev=25, azim=-60)
+		plt.tight_layout()
+		fig.subplots_adjust(right=0.82)
+		fig.text(
+			0.95,
+			0.5,
+			f"State at Index {lattice_index}",
+			rotation=90,
+			va="center",
+			ha="center",
+		)
+
+		if save_fig_path is not None:
+			fig_path = Path(save_fig_path)
+			fig_path.parent.mkdir(parents=True, exist_ok=True)
+			fig.savefig(fig_path, dpi=300, bbox_inches="tight")
+			print(f"[bifurcation_2d] Saved figure to: {fig_path}")
+
+		plt.show()
+
 	def vis_lattice_n(self,lattice_index):
 	#展示lattice_index位置的状态随时间的变化
 		N = 1000
 		x0 = self.x0
-		z0 = self.z0
 		import matplotlib.pyplot as plt
 		x0 = np.asarray(x0, dtype=float).copy()
-		z0 = float(z0)
 		if x0.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 		x_values = np.empty(N, dtype=float)
-		z = z0
 		x = x0.copy()
 		for t in range(N):
-			x, z = self.step(x, z)
+			x = self.step(x)
 			x_values[t] = x[int(lattice_index)]
 
 		plt.figure(figsize=(10, 6))
@@ -1727,17 +1823,14 @@ class SalomoncouplingCML:
      #展示迭代N步后整个格点的状态分布
 		N = 100
 		x0 = self.x0
-		z0 = self.z0
 		import matplotlib.pyplot as plt	
 		x0 = np.asarray(x0, dtype=float).copy()
-		z0 = float(z0)
 		if x0.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 		x_values = np.empty((N, self.L), dtype=float)
-		z = z0
 		x = x0.copy()
 		for t in range(N):
-			x, z = self.step(x, z)
+			x = self.step(x)
 			x_values[t, :] = x
 		#散点图绘制x_values[-1, :]的分布情况
 		plt.figure(figsize=(10, 6))
@@ -1759,13 +1852,12 @@ class SalomoncouplingCML:
 			raise ValueError("N must be a positive integer")
 
 		x = np.asarray(self.x0, dtype=float).copy()
-		z = float(self.z0)
 		if x.size != self.L:
 			raise ValueError(f"x0 length must equal L={self.L}")
 
 		x_values = np.empty((self.L, N), dtype=float)
 		for t in range(N):
-			x, z = self.step(x, z)
+			x = self.step(x)
 			x_values[:, t] = x
 
 		return x_values
@@ -1785,7 +1877,7 @@ class SalomoncouplingCML:
 				p_idx=np.asarray(self._p_idx, dtype=np.int64),
 				q_idx=np.asarray(self._q_idx, dtype=np.int64),
 				mu=float(self.mu),
-				a=float(self.a),
+				v=float(self.v),
 				alpha=float(self.alpha),
 				beta=float(self.beta),
 				is_mod=bool(self.is_mod),
@@ -1825,13 +1917,13 @@ class SalomoncouplingCML:
 			x_values[t, :] = x
 
 		return x_values
+
+
 if __name__ == "__main__":
 	L = 100
 	params = {
 		"mu": 5,
-		"lam": 5,
-		"a": 20,
-		"b": 20,
+		"v": 20,
 		"alpha": 5,
 		"beta": 5,
 		"xi": 1,
@@ -1840,15 +1932,14 @@ if __name__ == "__main__":
 	seed = 2026
 	np.random.seed(seed)
 	x0 = np.random.rand(L)
-	z0 = np.random.rand()
-	cml = SalomoncouplingCML(L=L, params=params, initstate={"x0": x0, "z0": z0})
+	cml = SalomoncouplingCML(L=L, params=params, initstate={"x0": x0})
 
-	# N = 28
-	# cml.generate_rdseq_fast(1)
-	# st = time.time()
-	# cml.generate_rdseq_fast(N)
-	# et = time.time()
-	# print(f"Time taken for {N} steps: {et - st:.6f} seconds")
+	N = 28
+	cml.generate_rdseq_fast(1)
+	st = time.time()
+	cml.generate_rdseq_fast(N)
+	et = time.time()
+	print(f"Time taken for {N} steps: {et - st:.6f} seconds")
 
 
 	# cml.vis_lattice_n(lattice_index=25)
@@ -1857,7 +1948,6 @@ if __name__ == "__main__":
 	# 示例 1: 分叉图
 	# cml.Bifurcation_diagram(
 	# 	x0=x0,
-	# 	z0=z0,
 	# 	lattice_index=1,
 	# 	param_name="alpha",
 	# 	param_range=np.linspace(0, 5, 1000),
@@ -1870,10 +1960,9 @@ if __name__ == "__main__":
 # 	cml.lyap_scan(
 # 		param1="mu",
 # 		values1=np.linspace(0.1, 10, 50),
-# 		param2="a",
+# 		param2="v",
 # 		values2=np.linspace(0.1, 10, 50),
 # 		x0=x0,
-# 		z0=z0,
 # 		n=250,
 # 		discard=50,
 # 		epsilon=1e-12,
@@ -1889,7 +1978,6 @@ if __name__ == "__main__":
 # 		param2="beta",
 # 		values2=np.linspace(0.1, 10, 50),
 # 		x0=x0,
-# 		z0=z0,
 # 		n=250,
 # 		discard=50,
 # 		epsilon=1e-12,
@@ -1905,7 +1993,6 @@ if __name__ == "__main__":
 	# 	param2="alpha",
 	# 	values2=np.linspace(0.1, 10, 50),
 	# 	x0=x0,
-	# 	z0=z0,
 	# 	n=250,
 	# 	discard=50,
 	# 	epsilon=1e-12,
@@ -1918,15 +2005,14 @@ if __name__ == "__main__":
 
 
 	# 示例 3: NIST 800-22 测试
-	# cml.generate_random_bits_file(n_bits=100_000_000, save_path="mywork/output/salomonV2_overall_random.bin", x0=x0, z0=z0, warmup=2000, scale_factor=10**10, bitorder="little")
-	# cml.generate_random_bits_file(n_bits=100_000_000, save_path="mywork/output/salomonV2_lattice95_random.bin", x0=x0, z0=z0, warmup=2000, scale_factor=10**10, bitorder="little",mode = "lattice")
+	# cml.generate_random_bits_file(n_bits=100_000_000, save_path="mywork/output/salomonV2_overall_random.bin", x0=x0, warmup=2000, scale_factor=10**10, bitorder="little")
+	# cml.generate_random_bits_file(n_bits=100_000_000, save_path="mywork/output/salomonV2_lattice95_random.bin", x0=x0, warmup=2000, scale_factor=10**10, bitorder="little",mode = "lattice")
 
 	# 示例 4: 信息熵 IE(i, p)（扫描任意单参数）+ 线框图
 	# cml.IE(
-	# 	param_name="lam",
+	# 	param_name="v",
 	# 	param_range=np.linspace(0.0, 1.0, 41),
 	# 	x0=x0,
-	# 	z0=z0,
 	# 	n=1000,
 	# 	discard=200,
 	# 	n_states=10,
@@ -1940,40 +2026,39 @@ if __name__ == "__main__":
 	# cml.avg_IE(
 	# 	param1="mu",
 	# 	values1=np.linspace(0, 5, 50),
-	# 	param2="a",
+	# 	param2="v",
 	# 	values2=np.linspace(0, 5, 50),
 	# 	n=1000,
 	# 	discard=200,
 	# 	n_states=10,
-	# 	save_path="mywork/output/salomon_avg_ie_mu_a.npz",
+	# 	save_path="mywork/output/salomon_avg_ie_mu_v.npz",
 	# 	plot=True,
-	# 	save_fig_path="mywork/output/salomon_avg_ie_mu_a.png",
+	# 	save_fig_path="mywork/output/salomon_avg_ie_mu_v.png",
 	# )
 
 	# # 示例 6: 信息熵IE
 	# cml.IE(
-	# 	param_name="a",
+	# 	param_name="v",
 	# 	param_range=np.linspace(0, 5, 50),
 	# 	n=1000,
 	# 	discard=200,
 	# 	n_states=10,
-	# 	save_path="mywork/output/salomon_ie_a.npz",
+	# 	save_path="mywork/output/salomon_ie_v.npz",
 	# 	plot=True,
-	# 	save_fig_path="mywork/output/salomon_ie_a.png",
+	# 	save_fig_path="mywork/output/salomon_ie_v.png",
 	# )
  
 	# 示例 7: 平均互信息 Ld(p1, p2) 双参数扫描 + 线框图
 	# cml.AMI_scan(
 	# 	param1="mu",
 	# 	values1=np.linspace(1, 10, 25),
-	# 	param2="a",
+	# 	param2="v",
 	# 	values2=np.linspace(1, 10, 25),
 	# 	x0=x0,
-	# 	z0=z0,
 	# 	n=150,
 	# 	discard=50,
 	# 	n_states=10,
-	# 	save_path="mywork/output/salomon_avg_ami_mu_a.npz",
+	# 	save_path="mywork/output/salomon_avg_ami_mu_v.npz",
 	# 	plot=True,
-	# 	save_fig_path="mywork/output/salomon_avg_ami_mu_a.png",
+	# 	save_fig_path="mywork/output/salomon_avg_ami_mu_v.png",
 	# )

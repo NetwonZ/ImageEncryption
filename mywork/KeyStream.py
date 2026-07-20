@@ -7,35 +7,52 @@ from pathlib import Path
 import mpmath as mp
 import numpy as np
 from mpmath.ctx_mp_python import mpf
+import random
+
+from .SalomonCouplingCML import *
 
 # 使用高精度浮点，避免在中间迭代阶段过早退化到双精度
 mp.mp.dps = 80
 
 
-def _derive_chaos_parameters(plaintext_bytes: bytes) -> dict[str, mpf]:
+def _parse_user_key_bits(user_key: str) -> np.ndarray:
+    """将用户输入的 256 位二进制密钥转换为位数组。"""
+    if not isinstance(user_key, str):
+        raise TypeError("user_key must be a 256-character binary string")
+    if len(user_key) != 256:
+        raise ValueError("user_key must contain exactly 256 bits")
+    if any(bit not in "01" for bit in user_key):
+        raise ValueError("user_key must contain only '0' and '1'")
+
+    return np.fromiter((int(bit) for bit in user_key), dtype=np.uint8, count=256)
+
+
+def _derive_chaos_parameters(plaintext_bytes: bytes, user_key: str) -> dict[str, mpf]:
     """从明文图片的原始字节中派生高精度混沌参数。"""
-    sha512_ctx = hashlib.sha512()
-    sha512_ctx.update(plaintext_bytes)
-    digest = sha512_ctx.digest()
+    sha256_ctx = hashlib.sha256()
+    sha256_ctx.update(plaintext_bytes)
+    digest = sha256_ctx.digest()
 
-    # 转成 512 位二进制并按固定分段提取参数
-    H = np.unpackbits(np.frombuffer(digest, dtype=np.uint8))
+    # 转成 256 位二进制并按固定分段提取参数
+    image_hash_bits = np.unpackbits(np.frombuffer(digest, dtype=np.uint8))
+    user_key_bits = _parse_user_key_bits(user_key)
+    H = np.bitwise_xor(image_hash_bits, user_key_bits)
 
-    # 全局扰动因子（12 位）
-    g_bits = H[500:512]
+    # 全局扰动因子（6 位）
+    g_bits = H[250:256]
     g_int = sum(int(bit) << idx for idx, bit in enumerate(g_bits.tolist()))
-    g = mp.mpf(g_int) / mp.power(2, 12)
+    g = mp.mpf(g_int) / mp.power(2, 6)
 
     U: list[mpf] = []
-    # 前 500 位分成 5 段，每段 100 位
+    # 前 250 位分成 5 段，每段 50 位
     for j in range(5):
-        start_idx = j * 100
-        block_bits = H[start_idx : start_idx + 100]
+        start_idx = j * 50
+        block_bits = H[start_idx : start_idx + 50]
 
         # 使用 Python 原生整数避免位信息损失
         block_int = sum(int(bit) << idx for idx, bit in enumerate(block_bits.tolist()))
 
-        V_j = mp.mpf(block_int) / mp.power(2, 100)
+        V_j = mp.mpf(block_int) / mp.power(2, 50)
         mix_val = mp.fmod(V_j + g, mp.mpf(1))
         U_j = mp.fabs(mp.sin(4 * mp.pi * mix_val))
         U.append(U_j)
@@ -153,6 +170,7 @@ def _finalize_output(params: dict[str, mpf], sequence: list[mpf] | np.ndarray) -
 def keystream_generation(
     L: int,
     plaintext_image_path: str | Path,
+    user_key: str,
     *,
     use_high_precision: bool = False,
 ) -> dict[str, float | np.ndarray]:
@@ -177,7 +195,7 @@ def keystream_generation(
     if not plaintext_bytes:
         raise ValueError(f"Plaintext image is empty: {image_path}")
 
-    params = _derive_chaos_parameters(plaintext_bytes)
+    params = _derive_chaos_parameters(plaintext_bytes, user_key)
     if use_high_precision:
         sequence = _iterate_keystream_mp(
             x0=params["x"],
@@ -199,12 +217,18 @@ def keystream_generation(
 
 # --- 实验验证 ---
 if __name__ == "__main__":
-    sample_path = Path(r"C:\ImageEncryptionV2\image\img2.png")
+    sample_path = Path(r"C:\ImageEncryption\images\img2.png")
     if sample_path.is_file():
         import time
+        seed = 2026
+        random.seed(seed)
+        binary_key_str = format(random.getrandbits(256), "0256b")
+        hex_key = f"{int(binary_key_str, 2):064x}"
+        print(hex_key)
 
+        user_key = binary_key_str
         st = time.time()
-        result = keystream_generation(512 * 512, sample_path)
+        result = keystream_generation(512 * 512, sample_path, user_key)
         et = time.time()
         print(f"Time taken: {et - st:.6f} seconds")
         print("====== 混沌参数与随机数序列输出 ======")
@@ -212,5 +236,6 @@ if __name__ == "__main__":
             print(f"{key:<6}: {result[key]:.30f}")
         print(f"X len : {len(result['X'])}")
         print(f"X head: {np.array2string(result['X'][:10], precision=8, separator=', ')}")
+        
     else:
         print(f"Sample image not found: {sample_path}")
