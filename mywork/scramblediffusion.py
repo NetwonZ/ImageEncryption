@@ -188,19 +188,9 @@ DNA_RULE_TABLE = np.array(
 )
 DNA_RULE_TABLE_INV = np.argsort(DNA_RULE_TABLE, axis=1).astype(np.uint8)
 
-DNA_HIGH6_PAIR_INDICES = (
-    (0, 1),
-    (2, 3),
-    (4, 5),
-    (8, 9),
-    (10, 11),
-    (12, 13),
-    (16, 17),
-    (18, 19),
-    (20, 21),
-)
-LOW2_BITPLANE_INDICES = (6, 7, 14, 15, 22, 23)
-ENCODED_HIGH6_BITPLANE_INDICES = tuple(sorted({index for pair in DNA_HIGH6_PAIR_INDICES for index in pair}))
+# RGB bitplanes are ordered R7..R0, G7..G0, B7..B0.  Encode every pair.
+DNA_ALL_BITPLANE_PAIR_INDICES = tuple((index, index + 1) for index in range(0, 24, 2))
+DNA_PLANE_COUNT = len(DNA_ALL_BITPLANE_PAIR_INDICES)
 
 
 def to_grayscale(image: np.ndarray) -> np.ndarray:
@@ -525,7 +515,7 @@ def _convert_dna_storage(dna_codes: np.ndarray, storage_format: str) -> np.ndarr
 def _validate_dna_codes(
     dna_codes: np.ndarray,
     name: str = "dna_codes",
-    require_nine_planes: bool = False,
+    require_full_image_planes: bool = False,
 ) -> np.ndarray:
     dna_codes = np.asarray(dna_codes)
     if dna_codes.dtype.kind not in {"i", "u"}:
@@ -533,8 +523,8 @@ def _validate_dna_codes(
     if np.any((dna_codes < 0) | (dna_codes > 3)):
         raise ValueError(f"{name} must contain only DNA codes in the range [0, 3]")
     dna_codes = dna_codes.astype(np.uint8, copy=False)
-    if require_nine_planes and (dna_codes.ndim != 3 or dna_codes.shape[0] != 9):
-        raise ValueError(f"{name} must have shape (9, H, W)")
+    if require_full_image_planes and (dna_codes.ndim != 3 or dna_codes.shape[0] != DNA_PLANE_COUNT):
+        raise ValueError(f"{name} must have shape ({DNA_PLANE_COUNT}, H, W)")
     return dna_codes
 
 
@@ -642,7 +632,7 @@ def _apply_dna_operation_symbols(left_symbols: np.ndarray, right_symbols: np.nda
 
 
 def _encode_random_dna_scalar_with_rule(rng: np.random.Generator, rule_id: int) -> np.ndarray:
-    random_pairs = rng.integers(0, 2, size=(9, 2), dtype=np.uint8)
+    random_pairs = rng.integers(0, 2, size=(DNA_PLANE_COUNT, 2), dtype=np.uint8)
     return encode_bitplane_pair_with_rule(
         random_pairs[:, 0],
         random_pairs[:, 1],
@@ -681,7 +671,7 @@ def generate_block_dna_diffusion_key_columns(
     """Generate one DNA scalar key column for each flattened block column using the block rule."""
     if num_columns <= 0:
         raise ValueError("num_columns must be positive")
-    key_columns = np.empty((9, num_columns), dtype=np.uint8)
+    key_columns = np.empty((DNA_PLANE_COUNT, num_columns), dtype=np.uint8)
     for column_index in range(num_columns):
         key_columns[:, column_index] = _encode_random_dna_scalar_with_rule(rng, block_rule_id)
     return key_columns
@@ -737,10 +727,10 @@ def generate_block_dna_diffusion_v2_key_matrix(
             int(block_rule_id),
             storage_format="uint8_0_3",
         )
-        return np.repeat(shared_key_plane[np.newaxis, :, :], 9, axis=0)
+        return np.repeat(shared_key_plane[np.newaxis, :, :], DNA_PLANE_COUNT, axis=0)
 
-    key_matrix = np.empty((9, block_height, block_width), dtype=np.uint8)
-    for plane_index in range(9):
+    key_matrix = np.empty((DNA_PLANE_COUNT, block_height, block_width), dtype=np.uint8)
+    for plane_index in range(DNA_PLANE_COUNT):
         msb_plane = rng.integers(0, 2, size=(block_height, block_width), dtype=np.uint8)
         lsb_plane = rng.integers(0, 2, size=(block_height, block_width), dtype=np.uint8)
         key_matrix[plane_index] = encode_bitplane_pair_with_rule(
@@ -827,10 +817,10 @@ def blockwise_dna_encode_legacy(
     bitplanes: np.ndarray,
     blocks: Iterable[ImageBlock],
     block_rule_ids: np.ndarray,
-    pair_indices: tuple[tuple[int, int], ...] = DNA_HIGH6_PAIR_INDICES,
+    pair_indices: tuple[tuple[int, int], ...] = DNA_ALL_BITPLANE_PAIR_INDICES,
     storage_format: str = "uint8_0_3",
 ) -> np.ndarray:
-    """Encode the high 6 bits of each RGB channel into 9 DNA planes block by block."""
+    """Encode all RGB bitplanes into 12 DNA planes block by block."""
     bitplanes = np.asarray(bitplanes, dtype=np.uint8)
     if bitplanes.ndim != 3 or bitplanes.shape[0] != 24:
         raise ValueError("bitplanes must have shape (24, H, W)")
@@ -863,7 +853,7 @@ def blockwise_dna_encode(
     bitplanes: np.ndarray,
     blocks: Iterable[ImageBlock],
     block_rule_ids: np.ndarray,
-    pair_indices: tuple[tuple[int, int], ...] = DNA_HIGH6_PAIR_INDICES,
+    pair_indices: tuple[tuple[int, int], ...] = DNA_ALL_BITPLANE_PAIR_INDICES,
     storage_format: str = "uint8_0_3",
 ) -> np.ndarray:
     """全面向量化优化的 DNA 块编码，消灭双重循环（空间换时间）"""
@@ -881,8 +871,8 @@ def blockwise_dna_encode(
     for block_index, block in enumerate(blocks):
         rule_idx_map[block.row_slice, block.col_slice] = block_rule_ids[block_index] - 1
     pairs = np.array(pair_indices)
-    msb_idx = pairs[:, 0]  # 9 个 MSB 通道索引
-    lsb_idx = pairs[:, 1]  # 9 个 LSB 通道索引
+    msb_idx = pairs[:, 0]
+    lsb_idx = pairs[:, 1]
 
     # 瞬间提取出 3D 矩阵空间
     msb_planes = bitplanes[msb_idx] 
@@ -892,12 +882,12 @@ def blockwise_dna_encode(
 
     # 核心优化 利用高级索引和广播机制一步到位查表
 
-    # 将 (H, W) 扩展为 (1, H, W)，NumPy 会自动将其广播(Broadcast) 匹配至 (9, H, W)
+    # 将 (H, W) 扩展为 (1, H, W)，以广播匹配所有 DNA 平面。
     rule_idx_broadcasted = rule_idx_map[np.newaxis, :, :]
 
     # DNA_RULE_TABLE 的 Shape 是 (8, 4)
     # 传入两个相同/可广播形状的坐标张量，NumPy 底层会用 C 语言级循环并发查表
-    dna_codes = DNA_RULE_TABLE[rule_idx_broadcasted, pair_values]  # Shape: (9, H, W)
+    dna_codes = DNA_RULE_TABLE[rule_idx_broadcasted, pair_values]
 
     return _convert_dna_storage(dna_codes, storage_format)
 def decode_dna_matrix_to_bitplanes(
@@ -906,12 +896,12 @@ def decode_dna_matrix_to_bitplanes(
     block_rule_ids: np.ndarray,
     original_bitplanes: np.ndarray,
     storage_format: str = "uint8_0_3",
-    pair_indices: tuple[tuple[int, int], ...] = DNA_HIGH6_PAIR_INDICES,
+    pair_indices: tuple[tuple[int, int], ...] = DNA_ALL_BITPLANE_PAIR_INDICES,
 ) -> np.ndarray:
-    """Decode a DNA matrix back into 24 bitplanes and restore the untouched low 2 bits."""
+    """Decode a DNA matrix back into all 24 encrypted RGB bitplanes."""
     dna_codes = _dna_to_codes(dna_matrix, storage_format)
     if dna_codes.ndim != 3 or dna_codes.shape[0] != len(pair_indices):
-        raise ValueError("dna_matrix must have shape (9, H, W)")
+        raise ValueError(f"dna_matrix must have shape ({len(pair_indices)}, H, W)")
 
     original_bitplanes = np.asarray(original_bitplanes, dtype=np.uint8)
     if original_bitplanes.shape[0] != 24:
@@ -979,7 +969,7 @@ def permute_dna_blocks_v2(
     rd_matrix: np.ndarray,
 ) -> np.ndarray:
     """
-    使用2D一维化混沌随机矩阵 RdMatrix (29, 512*512) 的前 9 个通道
+    使用2D一维化混沌随机矩阵 RdMatrix 的前 12 个通道
     对每个自适应块进行全维度 3D 像素级加密置乱
     """
     dna_matrix = np.asarray(dna_matrix)
@@ -991,7 +981,7 @@ def permute_dna_blocks_v2(
     for block in blocks:
         h, w = block.height, block.width
         
-        # 1. 提取当前块对应的 DNA 碱基数据 (9, h, w)
+        # 1. 提取当前块对应的 DNA 碱基数据 (12, h, w)
         sub_block = dna_matrix[:, block.row_slice, block.col_slice]
         
         # 2. 【核心修复】计算当前块所有像素在 512*512 展平后的一维空间索引
@@ -1000,8 +990,8 @@ def permute_dna_blocks_v2(
         c_coords = np.arange(block.col, block.col + w)
         flat_spatial_indices = (r_coords * img_width + c_coords).ravel()
         
-        # 3. 从 2D 的 rd_matrix 中切出前 9 个通道对应的随机数，形状为 (9, h * w)
-        sub_rd = rd_matrix[0:9, flat_spatial_indices]
+        # 3. 从 2D 的 rd_matrix 中切出前 12 个通道对应的随机数。
+        sub_rd = rd_matrix[:DNA_PLANE_COUNT, flat_spatial_indices]
         
         # 4. 三维联合展平 (由于 sub_block 和 sub_rd 都是行优先展开，它们像素点是一一对应的)
         flat_block = sub_block.ravel()
@@ -1012,7 +1002,7 @@ def permute_dna_blocks_v2(
         
         # 6. 执行位置重排并回填
         scrambled_flat = flat_block[perm_indices]
-        encrypted_matrix[:, block.row_slice, block.col_slice] = scrambled_flat.reshape(9, h, w)
+        encrypted_matrix[:, block.row_slice, block.col_slice] = scrambled_flat.reshape(DNA_PLANE_COUNT, h, w)
         
     return encrypted_matrix
 
@@ -1034,7 +1024,7 @@ def apply_blockwise_dna_diffusion(
         rng = np.random.default_rng(seed)
 
     dna_codes = _dna_to_codes(dna_matrix, normalized_format)
-    dna_codes = _validate_dna_codes(dna_codes, name="dna_matrix", require_nine_planes=True)
+    dna_codes = _validate_dna_codes(dna_codes, name="dna_matrix", require_full_image_planes=True)
 
     blocks = tuple(blocks)
     block_rule_ids = np.asarray(block_rule_ids, dtype=np.uint8)
@@ -1053,7 +1043,7 @@ def apply_blockwise_dna_diffusion(
         col_slice = block.col_slice
         source_block = dna_codes[:, row_slice, col_slice]
         _, block_height, block_width = source_block.shape
-        flat_block_codes = source_block.reshape(9, block_height * block_width)
+        flat_block_codes = source_block.reshape(DNA_PLANE_COUNT, block_height * block_width)
         permutation = column_permutations[block_index]
         key_block = key_columns[block_index]
         operation_name = DNA_OPERATION_ID_TO_NAME[int(operation_ids[block_index])]
@@ -1071,7 +1061,7 @@ def apply_blockwise_dna_diffusion(
                 operation_name,
             )
 
-        diffused_codes[:, row_slice, col_slice] = diffused_block_codes.reshape(9, block_height, block_width)
+        diffused_codes[:, row_slice, col_slice] = diffused_block_codes.reshape(DNA_PLANE_COUNT, block_height, block_width)
 
     return BlockDNADiffusionResult(
         dna_matrix=_convert_dna_storage(diffused_codes, normalized_format),
@@ -1102,7 +1092,7 @@ def apply_blockwise_dna_diffusionV2(
         rng = np.random.default_rng(seed)
 
     dna_codes = _dna_to_codes(dna_matrix, normalized_format)
-    dna_codes = _validate_dna_codes(dna_codes, name="dna_matrix", require_nine_planes=True)
+    dna_codes = _validate_dna_codes(dna_codes, name="dna_matrix", require_full_image_planes=True)
 
     blocks = tuple(blocks)
     block_rule_ids = np.asarray(block_rule_ids, dtype=np.uint8)
@@ -1167,10 +1157,10 @@ def generate_global_dna_diffusion_key_matrix(
             key_rule_id,
             storage_format="uint8_0_3",
         )
-        return np.repeat(shared_key_plane[np.newaxis, :, :], 9, axis=0), key_rule_id
+        return np.repeat(shared_key_plane[np.newaxis, :, :], DNA_PLANE_COUNT, axis=0), key_rule_id
 
-    key_matrix = np.empty((9, height, width), dtype=np.uint8)
-    for plane_index in range(9):
+    key_matrix = np.empty((DNA_PLANE_COUNT, height, width), dtype=np.uint8)
+    for plane_index in range(DNA_PLANE_COUNT):
         msb_plane = rng.integers(0, 2, size=(height, width), dtype=np.uint8)
         lsb_plane = rng.integers(0, 2, size=(height, width), dtype=np.uint8)
         key_matrix[plane_index] = encode_bitplane_pair_with_rule(
@@ -1193,8 +1183,8 @@ def apply_global_dna_diffusion(
     storage_format: str = "uint8_0_3",
 ) -> GlobalDNADiffusionResult:
     """Apply global DNA diffusion on the post-block-diffusion DNA image.
-        scheme="synchronous"  时 9 通道共享同一个 (H,W)
-              ="independent"  时 9 通道各自有独立 key plane,但仍使用同一个全局 rule
+        scheme="synchronous"  时 12 通道共享同一个 (H,W)
+              ="independent"  时 12 通道各自有独立 key plane,但仍使用同一个全局 rule
         parallel_mode="sequential_groups" 时 按照 permutation_indices 定义的顺序分组串行处理每个像素位置
                      ="whole_batch"     时 将所有像素位置视为一个批次整体进行向量化处理（需要更多内存）
     """
@@ -1213,7 +1203,7 @@ def apply_global_dna_diffusion(
         rng = np.random.default_rng(seed)
 
     dna_codes = _dna_to_codes(dna_matrix, normalized_format)
-    dna_codes = _validate_dna_codes(dna_codes, name="dna_matrix", require_nine_planes=True)
+    dna_codes = _validate_dna_codes(dna_codes, name="dna_matrix", require_full_image_planes=True)
 
     _, height, width = dna_codes.shape
     num_pixels = height * width
@@ -1224,8 +1214,8 @@ def apply_global_dna_diffusion(
         rng,
         scheme=normalized_scheme,
     )
-    img_flat = dna_codes.reshape(9, num_pixels)
-    key_flat = key_matrix.reshape(9, num_pixels)
+    img_flat = dna_codes.reshape(DNA_PLANE_COUNT, num_pixels)
+    key_flat = key_matrix.reshape(DNA_PLANE_COUNT, num_pixels)
     current_columns = img_flat[:, permutation_indices]
     key_columns = key_flat[:, permutation_indices]
 
@@ -1246,7 +1236,7 @@ def apply_global_dna_diffusion(
             diffused_flat[:, start:end] = _apply_dna_operation_codes(mixed_group, group_keys, normalized_operation)
             carry_column = img_flat[:, permutation_indices[end - 1]][:, np.newaxis]
 
-    diffused_codes = diffused_flat.reshape(9, height, width)
+    diffused_codes = diffused_flat.reshape(DNA_PLANE_COUNT, height, width)
     return GlobalDNADiffusionResult(
         dna_matrix=_convert_dna_storage(diffused_codes, normalized_format),
         permutation_indices=permutation_indices,
@@ -1308,7 +1298,7 @@ def shuffle_blocks_between_groups(
             shuffled_dna[:, target_block.row_slice, target_block.col_slice] = dna_codes[:, source_block.row_slice, source_block.col_slice]
             shuffled_rule_ids[int(target_index)] = block_rule_ids[int(source_index)]
 
-            for plane_index in ENCODED_HIGH6_BITPLANE_INDICES + LOW2_BITPLANE_INDICES:
+            for plane_index in range(24):
                 shuffled_bitplanes[plane_index, target_block.row_slice, target_block.col_slice] = bitplanes[plane_index, source_block.row_slice, source_block.col_slice]
 
         groups.append(
@@ -1334,11 +1324,11 @@ def encode_image_blocks_to_dna(
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     storage_format: str = "uint8_0_3",
-    pair_indices: tuple[tuple[int, int], ...] = DNA_HIGH6_PAIR_INDICES,
+    pair_indices: tuple[tuple[int, int], ...] = DNA_ALL_BITPLANE_PAIR_INDICES,
     rd_matrix: np.ndarray | None = None,
     verbose: bool = True,
 ) -> DNAEncodingResult:
-    """Encode an RGB image into a block-wise DNA matrix of shape (9, H, W)."""
+    """Encode all RGB bitplanes into a block-wise DNA matrix of shape (12, H, W)."""
     normalized_format = _normalize_storage_format(storage_format)
     if rng is not None and seed is not None:
         raise ValueError("Pass either rng or seed, not both")
