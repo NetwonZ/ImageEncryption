@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Rectangle
 import time
-from salomon import SalomoncouplingCML
+from .SalomonCouplingCML import SalomoncouplingCML
 
 @dataclass(frozen=True)
 class ImageBlock:
@@ -1598,7 +1598,7 @@ def encrypt_image(
     diffusion_channel_mode: str = "together",
     global_diffusion_scheme: str = "independent",
     global_parallel_mode: str = "sequential_groups",
-    global_parallel_size: int = 512,
+    global_parallel_size: int = 64,
     verbose: bool = False,
     visualize_profile: bool = False,
 ) -> np.ndarray:
@@ -1633,9 +1633,9 @@ def encrypt_image(
     if params is None:
         params = {
             "mu": 5,
-            "lam": 5,
-            "a": 100,
-            "b": 200,
+            "v": 5,
+            "alpha": 5,
+            "beta": 5,
             "xi": 1,
             "eta": 1,
         }

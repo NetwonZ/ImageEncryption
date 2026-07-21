@@ -4,7 +4,7 @@ from typing import Union
 import matplotlib.pyplot as plt
 import numpy as np
 import PIL.Image as pil_image
-from scramblediffusion import encrypt_image
+from .ScrambleDiffusion import encrypt_image
 
 
 ImageInput = Union[str, Path, np.ndarray]
@@ -414,88 +414,88 @@ def plot_correlation_analysis(
 
 
 def histogram_test():
-    img1_path = Path(r"C:\ImageEncryptionV2\image\img1.png")
+    img1_path = Path(r"C:\ImageEncryption\images\img1.png")
     plot_pixel_histogram(img1_path, title="")
     encrypted_img = encrypt_image(img1_path, verbose=False)
     plot_pixel_histogram(encrypted_img, title="")
-    img2_path = Path(r"C:\ImageEncryptionV2\image\img2.png")
+    img2_path = Path(r"C:\ImageEncryption\images\img2.png")
     plot_pixel_histogram(img2_path, title="")
     encrypted_img2 = encrypt_image(img2_path, verbose=False)
     plot_pixel_histogram(encrypted_img2, title="")
-    img3_path = Path(r"C:\ImageEncryptionV2\image\img5.png")
+    img3_path = Path(r"C:\ImageEncryption\images\img5.png")
     plot_pixel_histogram(img3_path, title="")
     encrypted_img3 = encrypt_image(img3_path, verbose=False)
     plot_pixel_histogram(encrypted_img3, title="")
 
 
 def correlation_test():
-    img1_path = Path(r"C:\ImageEncryptionV2\image\img1.png")
+    img1_path = Path(r"C:\ImageEncryption\image\img1.png")
     coeffs, fig, axes = plot_correlation_analysis(img1_path)
     encrypted_img1 = encrypt_image(img1_path, verbose=False)
     coeffs_enc, fig_enc, axes_enc = plot_correlation_analysis(encrypted_img1)
     
-    img2_path = Path(r"C:\ImageEncryptionV2\image\img2.png")
+    img2_path = Path(r"C:\ImageEncryption\image\img2.png")
     coeffs2, fig2, axes2 = plot_correlation_analysis(img2_path)
     encrypted_img2 = encrypt_image(img2_path, verbose=False)
     coeffs2_enc, fig2_enc, axes2_enc = plot_correlation_analysis(encrypted_img2)
 
-    img3_path = Path(r"C:\ImageEncryptionV2\image\img3.png")
+    img3_path = Path(r"C:\ImageEncryption\image\img3.png")
     coeffs3, fig3, axes3 = plot_correlation_analysis(img3_path)
     encrypted_img3 = encrypt_image(img3_path, verbose=False)
     coeffs3_enc, fig3_enc, axes3_enc = plot_correlation_analysis(encrypted_img3)
 
 
 def entropy_test():
-    img1_path = Path(r"C:\ImageEncryptionV2\image\img1.png")
+    img1_path = Path(r"C:\ImageEncryption\image\img1.png")
     print("Image 1 entropy:", calculate_information_entropy(img1_path))
     encrypted_img1 = encrypt_image(img1_path, verbose=False)
     print("Encrypted Image 1 entropy:", calculate_information_entropy(encrypted_img1))
 
-    img2_path = Path(r"C:\ImageEncryptionV2\image\img2.png")
+    img2_path = Path(r"C:\ImageEncryption\image\img2.png")
     print("Image 2 entropy:", calculate_information_entropy(img2_path))
     encrypted_img2 = encrypt_image(img2_path, verbose=False)
     print("Encrypted Image 2 entropy:", calculate_information_entropy(encrypted_img2))
 
-    img3_path = Path(r"C:\ImageEncryptionV2\image\img3.png")
+    img3_path = Path(r"C:\ImageEncryption\image\img3.png")
     print("Image 3 entropy:", calculate_information_entropy(img3_path))
     encrypted_img3 = encrypt_image(img3_path, verbose=False)
     print("Encrypted Image 3 entropy:", calculate_information_entropy(encrypted_img3))
     
 def chi_square_test():
-    img1_path = Path(r"C:\ImageEncryptionV2\image\img1.png")
+    img1_path = Path(r"C:\ImageEncryption\images\img1.png")
     encrypted_img1 = encrypt_image(img1_path, verbose=False)
     calculate_chi_square_test(encrypted_img1)
     
-    img2_path = Path(r"C:\ImageEncryptionV2\image\img2.png")
+    img2_path = Path(r"C:\ImageEncryption\images\img2.png")
     encrypted_img2 = encrypt_image(img2_path, verbose=False)
     calculate_chi_square_test(encrypted_img2)
     
-    img3_path = Path(r"C:\ImageEncryptionV2\image\random_noise.png")
+    img3_path = Path(r"C:\ImageEncryption\images\random_noise.png")
     encrypted_img3 = encrypt_image(img3_path, verbose=False)
     calculate_chi_square_test(encrypted_img3)
     
 def encrypt_test():
-    img1_path = Path(r"C:\ImageEncryptionV2\image\img1.png")
+    img1_path = Path(r"C:\ImageEncryption\image\img1.png")
     encrypted_img1 = encrypt_image(img1_path, verbose=False)
     #save to the path
     img = pil_image.fromarray(encrypted_img1)
-    img.save(r"C:\ImageEncryptionV2\image\encrypted_img1.png")
+    img.save(r"C:\ImageEncryption\image\encrypted_img1.png")
     
-    img2_path = Path(r"C:\ImageEncryptionV2\image\img2.png")
+    img2_path = Path(r"C:\ImageEncryption\image\img2.png")
     encrypted_img2 = encrypt_image(img2_path, verbose=False)
     img = pil_image.fromarray(encrypted_img2)
-    img.save(r"C:\ImageEncryptionV2\image\encrypted_img2.png")
+    img.save(r"C:\ImageEncryption\image\encrypted_img2.png")
     
-    img3_path = Path(r"C:\ImageEncryptionV2\image\img3.png")
+    img3_path = Path(r"C:\ImageEncryption\image\img3.png")
     encrypted_img3 = encrypt_image(img3_path, verbose=False)
     img = pil_image.fromarray(encrypted_img3)
-    img.save(r"C:\ImageEncryptionV2\image\encrypted_img3.png")
+    img.save(r"C:\ImageEncryption\image\encrypted_img3.png")
     
     
 if __name__ == "__main__":
-    img1_path = Path(r"C:\ImageEncryptionV2\image\img1.png")
+    img1_path = Path(r"C:\ImageEncryption\images\img3.png")
     # histogram_test()
     # correlation_test()
     # entropy_test()
-    # chi_square_test()
-    encrypt_test()
+    chi_square_test()
+    # encrypt_test()
