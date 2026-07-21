@@ -1,0 +1,191 @@
+你是一名密码学和图像加密算法工程专家。
+
+请阅读论文：
+
+"An image encryption algorithm based on memristive chaotic neuron in medical internet of things environments"
+
+请严格按照论文实现完整复现。
+
+要求：
+
+1. 使用 Python 实现。
+
+2. 不允许简化算法。
+
+3. 所有数学公式必须对应论文公式。
+
+
+========================
+
+第一部分：
+实现忆阻混沌神经元
+
+
+实现：
+
+dx/dt =
+x-ax-x^3/3-y+us
+
+
+dy/dt =
+cx-bc*sin(beta*z)*y
+
+
+dz/dt =
+delta*y-alpha*z
+
+
+其中：
+
+a=0.7
+b=0.8
+c=0.1
+alpha=0.25
+beta=0.01
+delta=0.1
+A=0.35
+f=0.7
+
+
+初值：
+
+x=0.2
+y=0
+z=0.01
+
+
+使用Euler方法离散。
+
+
+输出：
+
+x,y,z三个混沌序列。
+
+
+========================
+
+第二部分：
+实现Adaptive Scrambling
+
+
+步骤：
+
+1.
+根据梯度计算：
+
+G(Q)
+
+如果：
+
+G(Q)>1.5*global_gradient_mean
+
+递归四分裂。
+
+
+2.
+block内部：
+
+随机执行：
+
+- zigzag scan
+- rotation 0/90/180/270
+
+
+3.
+block之间：
+
+根据混沌序列生成随机排列。
+
+
+要求：
+
+保存所有 permutation index，
+方便逆置乱。
+
+
+========================
+
+第三部分：
+Dynamic Cross Diffusion
+
+
+实现：
+
+1.
+根据混沌序列生成seed：
+
+seed=
+mod(
+floor(abs(sum(x))*1e6),
+2^32
+)
+
+
+2.
+使用seed生成动态S-box。
+
+
+3.
+执行：
+
+pixel XOR S-box
+
+
+4.
+执行spiral diffusion：
+
+C[k]=(C[k]+C[k-1]+d[k]) mod 256
+
+
+其中：
+
+d[k]=mod(floor(abs(z[k])*1e6),256)
+
+
+
+========================
+
+第四部分：
+实现完整decrypt。
+
+
+要求：
+
+decrypt(encrypt(image))
+必须完全恢复。
+
+
+========================
+
+第五部分：
+实验验证
+
+
+自动输出：
+
+1.
+原图
+2.
+置乱结果
+3.
+扩散结果
+4.
+密文
+
+
+对于文献进行的相关测试评价，你不需要完成，你只需要走完加密解密的流程即可。
+
+========================
+
+
+代码要求：
+
+- 使用numpy优化
+- 每个模块独立文件
+- 添加中文注释
+- 提供main.py运行入口
+- 提供单元测试验证可逆性
+- 输出中间变量方便调试
+
+最终目标：
+完全复现论文中的图像加密系统。
