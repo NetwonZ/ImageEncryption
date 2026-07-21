@@ -19,12 +19,17 @@ from pathlib import Path
 
 import numpy as np
 
-from .image_io import load_grayscale
-from .pipeline import ImageCryptosystem
+try:  # 支持直接运行与包模块运行。
+    from .image_io import load_grayscale
+    from .pipeline import ImageCryptosystem
+except ImportError:  # pragma: no cover - 直接脚本执行时使用
+    from image_io import load_grayscale
+    from pipeline import ImageCryptosystem
 
 # 8-bit 灰度图的理论理想值（NPCR 为 (1 - 1/256) * 100）
 IDEAL_NPCR = 99.6094
 IDEAL_UACI = 33.4635
+BASE_DIR = Path(__file__).resolve().parent
 
 
 def compute_npcr_uaci(cipher_a: np.ndarray, cipher_b: np.ndarray) -> tuple[float, float]:
@@ -75,6 +80,7 @@ def test_differential_attack(
     dt: float = 0.01,
     pre_iterations: int = 1000,
     seed: int = 20260721,
+    diffusion_mode: str = "hardened",
 ) -> list[dict]:
     """评估加密系统的抗差分性能（NPCR / UACI），并将结果打印为表格。
 
@@ -91,7 +97,11 @@ def test_differential_attack(
         raise ValueError("image_paths 不能为空，至少需要一张图像")
 
     rng = np.random.default_rng(seed)
-    system = ImageCryptosystem(dt=dt, pre_iterations=pre_iterations)
+    system = ImageCryptosystem(
+        dt=dt,
+        pre_iterations=pre_iterations,
+        diffusion_mode=diffusion_mode,
+    )
     results: list[dict] = []
 
     for path in image_paths:
@@ -112,6 +122,7 @@ def test_differential_attack(
                 "changed_pixel": (row, col),
                 "npcr_percent": npcr,
                 "uaci_percent": uaci,
+                "diffusion_mode": diffusion_mode,
             }
         )
 
@@ -132,17 +143,21 @@ def test_differential_attack(
     rows.append(("Average", "-", "-", f"{avg_npcr:.4f}", f"{avg_uaci:.4f}"))
     rows.append(("Ideal", "-", "-", f"{IDEAL_NPCR:.4f}", f"{IDEAL_UACI:.4f}"))
 
-    print("=== 抗差分攻击性能评估 (NPCR / UACI) ===")
+    print(f"=== 抗差分攻击性能评估 (NPCR / UACI, mode={diffusion_mode}) ===")
     _print_table(headers, rows)
     return results
 
 
 if __name__ == "__main__":
     demo_images = [
-        Path("images/img3.png"),
-        Path("images/img4.png"),
-        Path("images/img5.png"),
-        Path("images/img6.png"),
-        Path("images/img7.png"),
+        BASE_DIR / "images" / "img3.png",
+        BASE_DIR / "images" / "img4.png",
+        BASE_DIR / "images" / "img5.png",
+        BASE_DIR / "images" / "img6.png",
+        BASE_DIR / "images" / "img7.png",
+        BASE_DIR / "output" / "demo" / "img3.png",
     ]
-    test_differential_attack([p for p in demo_images if p.exists()])
+    available = [p for p in demo_images if p.exists()]
+    if not available:
+        raise SystemExit("未找到测试图像：请调用test_differential_attack并传入至少一张正方形灰度图。")
+    test_differential_attack(available)

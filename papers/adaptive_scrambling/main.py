@@ -7,23 +7,32 @@ from pathlib import Path
 import time
 import numpy as np
 
-from .image_io import create_demo_image, load_grayscale, save_grayscale
-from .pipeline import ImageCryptosystem, debug_summary
+try:  # 支持直接运行 ``python main.py``。
+    from .image_io import create_demo_image, load_grayscale, save_grayscale
+    from .pipeline import ImageCryptosystem, debug_summary
+except ImportError:  # pragma: no cover - 模块入口时不会走到这里
+    from image_io import create_demo_image, load_grayscale, save_grayscale
+    from pipeline import ImageCryptosystem, debug_summary
+
+
+BASE_DIR = Path(__file__).resolve().parent
 
 
 
 @dataclass
 class Config:
     # 输入灰度图像路径；如果设为 None 或文件不存在，则自动生成演示图
-    input_path: Path | None = Path(r"C:\ImageEncryption\papers\adaptive_scrambling\output\demo\img3.png")
+    input_path: Path | None = BASE_DIR / "output" / "demo" / "img3.png"
     # 输出结果保存目录
-    output_dir: Path = Path("papers/adaptive_scrambling/output/demo")
+    output_dir: Path = BASE_DIR / "output" / "demo"
     # 演示图边长（仅在 input_path 为 None 时生效）
     size: int = 256
     # Euler 步长 Δτ（论文未公开，默认 0.01）
     dt: float = 0.01
     # 预迭代次数（论文未公开）
     pre_iterations: int = 1000
+    # hardened：双向非线性交叉扩散；paper：仅论文公开的单向线性公式(5)
+    diffusion_mode: str = "hardened"
 
 
 def main() -> None:
@@ -44,7 +53,11 @@ def main() -> None:
         raise ValueError("论文 Algorithm 2 使用正方形块，输入图像必须是正方形")
 
     # 3. 初始化并运行加密系统
-    system = ImageCryptosystem(dt=cfg.dt, pre_iterations=cfg.pre_iterations)
+    system = ImageCryptosystem(
+        dt=cfg.dt,
+        pre_iterations=cfg.pre_iterations,
+        diffusion_mode=cfg.diffusion_mode,
+    )
     result = system.encrypt(image)
 
     et = time.time()

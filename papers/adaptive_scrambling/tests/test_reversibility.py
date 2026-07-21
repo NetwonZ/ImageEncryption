@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from adaptive_scrambling import adaptive_scramble, adaptive_unscramble, choose_round_configs
 from chaotic_neuron import generate_chaotic_sequences
-from dynamic_diffusion import diffuse_decrypt, diffuse_encrypt
+from differential_analysis import compute_npcr_uaci
+from dynamic_diffusion import HARDENED_MODE, PAPER_MODE, diffuse_decrypt, diffuse_encrypt
 from pipeline import ImageCryptosystem
 
 
@@ -35,14 +36,26 @@ class ReversibilityTests(unittest.TestCase):
 
     def test_diffusion_is_reversible(self) -> None:
         x, _, z = generate_chaotic_sequences(self.image.size, pre_iterations=20)
-        cipher, _, _, _ = diffuse_encrypt(self.image, x, z)
-        restored = diffuse_decrypt(cipher, x, z)
-        np.testing.assert_array_equal(restored, self.image)
+        for mode in (PAPER_MODE, HARDENED_MODE):
+            cipher, _, _, _ = diffuse_encrypt(self.image, x, z, mode=mode)
+            restored = diffuse_decrypt(cipher, x, z, mode=mode)
+            np.testing.assert_array_equal(restored, self.image)
 
     def test_complete_pipeline_is_reversible(self) -> None:
         result = ImageCryptosystem(pre_iterations=20).encrypt(self.image)
         np.testing.assert_array_equal(result.decrypted, self.image)
         self.assertFalse(np.array_equal(result.ciphertext, self.image))
+
+    def test_hardened_diffusion_has_avalanche_effect(self) -> None:
+        x, _, z = generate_chaotic_sequences(self.image.size, pre_iterations=20)
+        changed = self.image.copy()
+        changed[31, 29] = np.uint8((int(changed[31, 29]) + 1) % 256)
+        cipher_a, _, _, _ = diffuse_encrypt(self.image, x, z, mode=HARDENED_MODE)
+        cipher_b, _, _, _ = diffuse_encrypt(changed, x, z, mode=HARDENED_MODE)
+        npcr, uaci = compute_npcr_uaci(cipher_a, cipher_b)
+        self.assertGreater(npcr, 98.0)
+        self.assertGreater(uaci, 30.0)
+        self.assertLess(uaci, 37.0)
 
 
 if __name__ == "__main__":
