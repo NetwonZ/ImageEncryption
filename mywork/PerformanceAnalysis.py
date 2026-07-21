@@ -1305,6 +1305,14 @@ if __name__ == "__main__":
                         r"C:\ImageEncryption\images\img6.png",
                         r"C:\ImageEncryption\images\img7.png",
                         ])
-    result = analysis.encryption_decryption_test(show=True)
-    analysis.chi_square_test()
+    # result = analysis.encryption_decryption_test(show=True)
+    #卡方检验
+    # analysis.chi_square_test()
+    #直方图
     # analysis.histogram_test(plot=True, show=True)
+    #相关性分析
+    # analysis.test_correlation(plot=False, show=True)
+    #信息熵
+    # analysis.entropy_test()
+    #差分攻击
+    analysis.differential_attack_test()
