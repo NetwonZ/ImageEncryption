@@ -5,9 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 
-from .adaptive_scrambling import ScrambleKey, key_summary, scramble_rounds, unscramble_rounds
-from .chaotic_neuron import NeuronParameters, generate_chaotic_sequences, seed_from_chaos
-from .dynamic_diffusion import diffuse_decrypt, diffuse_encrypt
+try:  # 支持 ``python main.py`` 与 ``python -m papers.adaptive_scrambling.main`` 两种入口。
+    from .adaptive_scrambling import ScrambleKey, key_summary, scramble_rounds, unscramble_rounds
+    from .chaotic_neuron import NeuronParameters, generate_chaotic_sequences, seed_from_chaos
+    from .dynamic_diffusion import HARDENED_MODE, PAPER_MODE, diffuse_decrypt, diffuse_encrypt
+except ImportError:  # pragma: no cover - 直接脚本执行时使用
+    from adaptive_scrambling import ScrambleKey, key_summary, scramble_rounds, unscramble_rounds
+    from chaotic_neuron import NeuronParameters, generate_chaotic_sequences, seed_from_chaos
+    from dynamic_diffusion import HARDENED_MODE, PAPER_MODE, diffuse_decrypt, diffuse_encrypt
 
 
 @dataclass
@@ -22,6 +27,7 @@ class EncryptionResult:
     scramble_keys: list[ScrambleKey]
     sbox: np.ndarray
     diffusion_seed: int
+    diffusion_mode: str
 
 
 class ImageCryptosystem:
@@ -31,10 +37,14 @@ class ImageCryptosystem:
     """
 
     def __init__(self, *, dt: float = 0.01, pre_iterations: int = 1000,
-                 params: NeuronParameters | None = None) -> None:
+                 params: NeuronParameters | None = None,
+                 diffusion_mode: str = HARDENED_MODE) -> None:
+        if diffusion_mode not in {PAPER_MODE, HARDENED_MODE}:
+            raise ValueError("diffusion_mode只能为'paper'或'hardened'")
         self.dt = dt
         self.pre_iterations = pre_iterations
         self.params = params or NeuronParameters()
+        self.diffusion_mode = diffusion_mode
 
     def encrypt(self, image: np.ndarray) -> EncryptionResult:
         plain = np.asarray(image, dtype=np.uint8)
@@ -50,15 +60,19 @@ class ImageCryptosystem:
             (base_seed ^ 0x9E3779B9) % (2 ** 32),
         )
         scrambled, keys = scramble_rounds(plain, seeds=scramble_seeds)
-        ciphertext, local, sbox, diffusion_seed = diffuse_encrypt(scrambled, x, z)
+        ciphertext, local, sbox, diffusion_seed = diffuse_encrypt(
+            scrambled, x, z, mode=self.diffusion_mode
+        )
         decrypted = self.decrypt(ciphertext, x=x, y=y, z=z, scramble_keys=keys)
         return EncryptionResult(ciphertext, scrambled, local, decrypted, x, y, z,
-                                keys, sbox, diffusion_seed)
+                                keys, sbox, diffusion_seed, self.diffusion_mode)
 
     def decrypt(self, ciphertext: np.ndarray, *, x: np.ndarray, y: np.ndarray,
                 z: np.ndarray, scramble_keys: list[ScrambleKey]) -> np.ndarray:
         del y  # y参与混沌生成，但扩散公式使用论文指定的x、z
-        unscrambled = diffuse_decrypt(np.asarray(ciphertext, dtype=np.uint8), x, z)
+        unscrambled = diffuse_decrypt(
+            np.asarray(ciphertext, dtype=np.uint8), x, z, mode=self.diffusion_mode
+        )
         return unscramble_rounds(unscrambled, scramble_keys)
 
 
@@ -76,6 +90,7 @@ def debug_summary(result: EncryptionResult) -> dict:
             "z": [float(np.min(result.z)), float(np.max(result.z))],
         },
         "diffusion_seed": result.diffusion_seed,
+        "diffusion_mode": result.diffusion_mode,
         "sbox_head": result.sbox[:16].tolist(),
         "scrambling": key_summary(result.scramble_keys),
     }

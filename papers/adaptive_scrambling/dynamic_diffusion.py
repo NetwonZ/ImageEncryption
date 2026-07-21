@@ -5,6 +5,11 @@ from __future__ import annotations
 import numpy as np
 
 
+PAPER_MODE = "paper"
+HARDENED_MODE = "hardened"
+_VALID_MODES = {PAPER_MODE, HARDENED_MODE}
+
+
 def generate_dynamic_sbox(x: np.ndarray) -> tuple[np.ndarray, int]:
     """依据论文公式(3)生成由seed确定的动态S-box。"""
     value = int(np.floor(abs(float(np.sum(x, dtype=np.float64))) * 1e6))
@@ -88,15 +93,111 @@ def inverse_spiral_diffusion(cipher: np.ndarray, z: np.ndarray) -> np.ndarray:
     return c.reshape(image.shape).astype(np.uint8)
 
 
-def diffuse_encrypt(scrambled: np.ndarray, x: np.ndarray, z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-    """执行完整动态交叉扩散，返回(ciphertext, local_xor_result, path, seed)。"""
+def nonlinear_bidirectional_diffusion(local: np.ndarray, x: np.ndarray,
+                                      z: np.ndarray) -> np.ndarray:
+    """增强模式：可逆的双向非线性螺旋交叉扩散。
+
+    原论文公式(5)为单向线性累加，无法让单点差异产生接近理想值的 UACI。
+    本模式保留动态 S-box 与螺旋路径，并增加两个互逆的反馈阶段：
+
+        F_k = (A_k + SBox[F_{k-1}] + d_k) mod 256
+        C_k = (F_k + SBox[C_{k+1}] + d_k) mod 256
+
+    第一式沿螺旋正向计算，第二式沿反向计算。S-box 是置换，因而反馈项
+    非线性且不会像 ``p + SBox[p]`` 一样发生状态合并；两个方向共同保证
+    任意位置的单点修改能影响整条螺旋路径。
+    """
+    image = np.asarray(local, dtype=np.uint8)
+    if image.ndim != 2:
+        raise ValueError("输入必须是二维灰度图像")
+    n = image.size
+    if len(x) < n or len(z) < n:
+        raise ValueError("混沌序列长度不足")
+
+    sbox, _ = generate_dynamic_sbox(x)
+    path = spiral_path(*image.shape)
+    d = (np.floor(np.abs(z[:n]) * 1e6).astype(np.uint64) % 256).astype(np.int64)
+
+    forward = image.reshape(-1).astype(np.int64).copy()
+    for k in range(1, n):
+        previous = forward[path[k - 1]]
+        forward[path[k]] = (forward[path[k]] + int(sbox[previous]) + d[k]) % 256
+
+    cipher = forward.copy()
+    for k in range(n - 2, -1, -1):
+        following_cipher = cipher[path[k + 1]]
+        cipher[path[k]] = (cipher[path[k]] + int(sbox[following_cipher]) + d[k]) % 256
+    return cipher.reshape(image.shape).astype(np.uint8)
+
+
+def inverse_nonlinear_bidirectional_diffusion(cipher: np.ndarray, x: np.ndarray,
+                                              z: np.ndarray) -> np.ndarray:
+    """逆解 :func:`nonlinear_bidirectional_diffusion`。"""
+    image = np.asarray(cipher, dtype=np.uint8)
+    if image.ndim != 2:
+        raise ValueError("输入必须是二维灰度图像")
+    n = image.size
+    if len(x) < n or len(z) < n:
+        raise ValueError("混沌序列长度不足")
+
+    sbox, _ = generate_dynamic_sbox(x)
+    path = spiral_path(*image.shape)
+    d = (np.floor(np.abs(z[:n]) * 1e6).astype(np.uint64) % 256).astype(np.int64)
+    cipher_flat = image.reshape(-1).astype(np.int64)
+
+    # 逆第二阶段。右侧使用原始C[k+1]，因此不能在同一数组上覆盖它。
+    forward = cipher_flat.copy()
+    for k in range(n - 2, -1, -1):
+        forward[path[k]] = (
+            cipher_flat[path[k]] - int(sbox[cipher_flat[path[k + 1]]]) - d[k]
+        ) % 256
+
+    # 逆第一阶段。此时forward已完整恢复，使用F[k-1]即可逐点恢复A[k]。
+    local = forward.copy()
+    for k in range(1, n):
+        local[path[k]] = (
+            forward[path[k]] - int(sbox[forward[path[k - 1]]]) - d[k]
+        ) % 256
+    return local.reshape(image.shape).astype(np.uint8)
+
+
+def diffuse_encrypt(
+    scrambled: np.ndarray,
+    x: np.ndarray,
+    z: np.ndarray,
+    *,
+    mode: str = HARDENED_MODE,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """执行动态交叉扩散。
+
+    ``mode='paper'`` 严格执行论文公式(5)；``mode='hardened'`` 使用
+    双向非线性反馈以提供可验证的抗差分能力。
+    """
+    if mode not in _VALID_MODES:
+        raise ValueError(f"未知扩散模式: {mode}，可选值为{sorted(_VALID_MODES)}")
     sbox, seed = generate_dynamic_sbox(x)
     local = local_xor(scrambled, x)
-    cipher = spiral_diffusion(local, z)
+    cipher = (
+        spiral_diffusion(local, z)
+        if mode == PAPER_MODE
+        else nonlinear_bidirectional_diffusion(local, x, z)
+    )
     return cipher, local, sbox, seed
 
 
-def diffuse_decrypt(cipher: np.ndarray, x: np.ndarray, z: np.ndarray) -> np.ndarray:
-    """完整逆扩散：先逆spiral，再逆XOR。"""
-    local = inverse_spiral_diffusion(cipher, z)
+def diffuse_decrypt(
+    cipher: np.ndarray,
+    x: np.ndarray,
+    z: np.ndarray,
+    *,
+    mode: str = HARDENED_MODE,
+) -> np.ndarray:
+    """完整逆扩散：先逆螺旋反馈，再逆XOR。"""
+    if mode not in _VALID_MODES:
+        raise ValueError(f"未知扩散模式: {mode}，可选值为{sorted(_VALID_MODES)}")
+    local = (
+        inverse_spiral_diffusion(cipher, z)
+        if mode == PAPER_MODE
+        else inverse_nonlinear_bidirectional_diffusion(cipher, x, z)
+    )
     return inverse_local_xor(local, x)
