@@ -1598,7 +1598,7 @@ def encrypt_image(
     diffusion_channel_mode: str = "together",
     global_diffusion_scheme: str = "independent",
     global_parallel_mode: str = "sequential_groups",
-    global_parallel_size: int = 64,
+    global_parallel_size: int = 96,
     verbose: bool = False,
     visualize_profile: bool = False,
 ) -> np.ndarray:
@@ -1748,6 +1748,9 @@ SD_image = encrypt_image
 
 
 if __name__ == "__main__":
-    img_pth = Path(r"C:\ImageEncryptionV2\image\img3.png")
+    img_pth = Path(r"C:\ImageEncryption\images\img3.png")
+    st = time.time()
     encrypted_img = encrypt_image(img_pth,verbose=True)
+    et = time.time()
+    print(f"Encryption took {et - st:.6f} seconds")
     show_images(_load_rgb_image_array(img_pth), encrypted_img, title_suffix=" (Encrypted)")

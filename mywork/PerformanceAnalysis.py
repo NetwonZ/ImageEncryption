@@ -1,19 +1,55 @@
+"""Reusable performance and security analysis for image-encryption callables."""
+
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
+import time
+from typing import Any, Callable, Mapping, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import PIL.Image as pil_image
-from .ScrambleDiffusion import encrypt_image
 
-
-ImageInput = Union[str, Path, np.ndarray]
+ImageInput = Union[str, Path, np.ndarray, pil_image.Image]
+CryptFunction = Callable[..., Any]
 
 _DIRECTIONS = {
     "horizontal": (0, 1),
     "vertical": (1, 0),
     "diagonal": (1, 1),
 }
+
+
+def _print_ascii_table(headers: tuple[str, ...], rows: list[tuple[Any, ...]]) -> None:
+    """Print a compact ASCII table with a left-aligned first column."""
+    if not headers:
+        return
+    if any(len(row) != len(headers) for row in rows):
+        raise ValueError("every table row must have the same number of values as headers")
+
+    text_rows = [tuple(str(value) for value in row) for row in rows]
+    widths = [
+        max(len(headers[index]), *(len(row[index]) for row in text_rows))
+        for index in range(len(headers))
+    ]
+    separator = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+
+    def format_row(values: tuple[str, ...], *, header: bool = False) -> str:
+        cells = []
+        for index, value in enumerate(values):
+            if header:
+                cells.append(value.center(widths[index]))
+            elif index == 0:
+                cells.append(value.ljust(widths[index]))
+            else:
+                cells.append(value.rjust(widths[index]))
+        return "| " + " | ".join(cells) + " |"
+
+    print(separator)
+    print(format_row(headers, header=True))
+    print(separator)
+    for row in text_rows:
+        print(format_row(row))
+    print(separator)
 
 
 def _load_image_array(image: ImageInput) -> np.ndarray:
@@ -23,6 +59,11 @@ def _load_image_array(image: ImageInput) -> np.ndarray:
             if len(img.getbands()) == 1:
                 return np.asarray(img.convert("L"))
             return np.asarray(img.convert("RGB"))
+
+    if isinstance(image, pil_image.Image):
+        if len(image.getbands()) == 1:
+            return np.asarray(image.convert("L"))
+        return np.asarray(image.convert("RGB"))
 
     if isinstance(image, np.ndarray):
         arr = np.asarray(image)
@@ -34,7 +75,7 @@ def _load_image_array(image: ImageInput) -> np.ndarray:
             return arr[:, :, :3]
         raise ValueError("ndarray image must be 2D grayscale or 3D with 1, 3, or 4 channels")
 
-    raise TypeError("image must be a file path or numpy ndarray")
+    raise TypeError("image must be a file path, PIL image, or numpy ndarray")
 
 
 def _to_uint8_pixels(arr: np.ndarray) -> np.ndarray:
@@ -213,11 +254,21 @@ def calculate_chi_square_test(
     }
 
     if print_result:
-        print(f"Chi-square test (alpha={alpha}, critical_value={critical_value:.4f})")
-        print(f"{'Channel':<10}{'Chi-square':>15}{'Result':>10}")
-        for channel_name, result in results.items():
-            mark = "√" if result["passed"] else "×"
-            print(f"{channel_name:<10}{result['chi_square']:>15.4f}{mark:>10}")
+        print("\nChi-square histogram uniformity")
+        print("--------------------------------")
+        _print_ascii_table(
+            ("Channel", "Chi-square", "Critical Value", "Alpha", "Result"),
+            [
+                (
+                    "Average" if channel_name == "average" else channel_name,
+                    f"{result['chi_square']:.4f}",
+                    f"{critical_value:.4f}",
+                    f"{alpha:.4f}",
+                    "Pass" if result["passed"] else "Fail",
+                )
+                for channel_name, result in results.items()
+            ],
+        )
 
     return results
 
@@ -413,89 +464,847 @@ def plot_correlation_analysis(
 
 
 
-def histogram_test():
-    img1_path = Path(r"C:\ImageEncryption\images\img1.png")
-    plot_pixel_histogram(img1_path, title="")
-    encrypted_img = encrypt_image(img1_path, verbose=False)
-    plot_pixel_histogram(encrypted_img, title="")
-    img2_path = Path(r"C:\ImageEncryption\images\img2.png")
-    plot_pixel_histogram(img2_path, title="")
-    encrypted_img2 = encrypt_image(img2_path, verbose=False)
-    plot_pixel_histogram(encrypted_img2, title="")
-    img3_path = Path(r"C:\ImageEncryption\images\img5.png")
-    plot_pixel_histogram(img3_path, title="")
-    encrypted_img3 = encrypt_image(img3_path, verbose=False)
-    plot_pixel_histogram(encrypted_img3, title="")
+@dataclass
+class _PipelineRun:
+    """Normalized result of one encryption/decryption invocation."""
+
+    image_path: Path
+    original: np.ndarray
+    encrypted: np.ndarray
+    decrypted: np.ndarray
+    encryption_seconds: float
+    decryption_seconds: float
 
 
-def correlation_test():
-    img1_path = Path(r"C:\ImageEncryption\image\img1.png")
-    coeffs, fig, axes = plot_correlation_analysis(img1_path)
-    encrypted_img1 = encrypt_image(img1_path, verbose=False)
-    coeffs_enc, fig_enc, axes_enc = plot_correlation_analysis(encrypted_img1)
-    
-    img2_path = Path(r"C:\ImageEncryption\image\img2.png")
-    coeffs2, fig2, axes2 = plot_correlation_analysis(img2_path)
-    encrypted_img2 = encrypt_image(img2_path, verbose=False)
-    coeffs2_enc, fig2_enc, axes2_enc = plot_correlation_analysis(encrypted_img2)
+class Analysis:
+    """Run image-encryption performance and security analyses.
 
-    img3_path = Path(r"C:\ImageEncryption\image\img3.png")
-    coeffs3, fig3, axes3 = plot_correlation_analysis(img3_path)
-    encrypted_img3 = encrypt_image(img3_path, verbose=False)
-    coeffs3_enc, fig3_enc, axes3_enc = plot_correlation_analysis(encrypted_img3)
+    Parameters
+    ----------
+    encryption_function:
+        A callable accepting an image path or ndarray. It may return a raw
+        image, ``(encrypted_image, metadata)``, a mapping, or an object with an
+        ``encrypted_image`` attribute (such as ``EncryptionResult``).
+    decryption_function:
+        A callable accepting the encrypted image. When the encryption result
+        also contains metadata/context, it is passed as the following
+        positional argument(s). The result may be a raw image, a mapping, or an
+        object with a ``decrypted_image`` attribute.
+    image_paths:
+        Non-empty list of test image paths. Paths are validated immediately so
+        a long batch does not fail half way through.
+
+    Notes
+    -----
+    Every public test method executes both supplied callables. Results are
+    returned as ordinary dictionaries for use in notebooks, JSON conversion,
+    or further statistical processing. ``print_result=True`` also prints a
+    compact human-readable summary.
+    """
+
+    def __init__(
+        self,
+        encryption_function: CryptFunction,
+        decryption_function: CryptFunction,
+        image_paths: list[str | Path],
+    ) -> None:
+        if not callable(encryption_function):
+            raise TypeError("encryption_function must be callable")
+        if not callable(decryption_function):
+            raise TypeError("decryption_function must be callable")
+        if not isinstance(image_paths, list):
+            raise TypeError("image_paths must be a list")
+        if not image_paths:
+            raise ValueError("image_paths must contain at least one image path")
+
+        normalized_paths = [Path(path).expanduser().resolve() for path in image_paths]
+        missing_paths = [str(path) for path in normalized_paths if not path.is_file()]
+        if missing_paths:
+            raise FileNotFoundError(f"test image does not exist: {missing_paths[0]}")
+
+        self.encryption_function = encryption_function
+        self.decryption_function = decryption_function
+        self.image_paths = normalized_paths
+
+    @staticmethod
+    def _invoke(function: CryptFunction, *args: Any) -> Any:
+        """Call a cryptographic function while disabling optional profiling."""
+        import inspect
+
+        quiet_kwargs: dict[str, bool] = {}
+        try:
+            parameters = inspect.signature(function).parameters
+            if "print_profile" in parameters:
+                quiet_kwargs["print_profile"] = False
+            if "verbose" in parameters:
+                quiet_kwargs["verbose"] = False
+        except (TypeError, ValueError):
+            pass
+        return function(*args, **quiet_kwargs)
+
+    @staticmethod
+    def _unpack_encryption_result(result: Any) -> tuple[Any, tuple[Any, ...]]:
+        if hasattr(result, "encrypted_image"):
+            context = (result.metadata,) if hasattr(result, "metadata") else ()
+            return result.encrypted_image, context
+
+        if isinstance(result, Mapping):
+            encrypted = next(
+                (result[key] for key in ("encrypted_image", "ciphertext", "cipher", "image") if key in result),
+                None,
+            )
+            if encrypted is None:
+                raise ValueError("encryption result mapping has no encrypted image")
+            context = next(
+                ((result[key],) for key in ("metadata", "context", "key", "state") if key in result),
+                (),
+            )
+            return encrypted, context
+
+        if isinstance(result, tuple):
+            if not result:
+                raise ValueError("encryption function returned an empty tuple")
+            return result[0], tuple(result[1:])
+
+        return result, ()
+
+    @staticmethod
+    def _unpack_decryption_result(result: Any) -> Any:
+        if hasattr(result, "decrypted_image"):
+            return result.decrypted_image
+        if isinstance(result, Mapping):
+            for key in ("decrypted_image", "plaintext", "plain", "image"):
+                if key in result:
+                    return result[key]
+            raise ValueError("decryption result mapping has no decrypted image")
+        if isinstance(result, tuple):
+            if not result:
+                raise ValueError("decryption function returned an empty tuple")
+            return result[0]
+        return result
+
+    def _run_pipeline(self, image: ImageInput, *, label_path: Path | None = None) -> _PipelineRun:
+        original = _to_uint8_pixels(_load_image_array(image))
+
+        started = time.perf_counter()
+        encryption_result = self._invoke(self.encryption_function, image)
+        encryption_seconds = time.perf_counter() - started
+        encrypted_value, decryption_context = self._unpack_encryption_result(encryption_result)
+        encrypted = _to_uint8_pixels(_load_image_array(encrypted_value))
+
+        started = time.perf_counter()
+        decryption_result = self._invoke(
+            self.decryption_function,
+            encrypted_value,
+            *decryption_context,
+        )
+        decryption_seconds = time.perf_counter() - started
+        decrypted = _to_uint8_pixels(_load_image_array(self._unpack_decryption_result(decryption_result)))
+
+        if label_path is None:
+            label_path = Path(image) if isinstance(image, (str, Path)) else Path("<array>")
+        return _PipelineRun(
+            image_path=label_path,
+            original=original,
+            encrypted=encrypted,
+            decrypted=decrypted,
+            encryption_seconds=encryption_seconds,
+            decryption_seconds=decryption_seconds,
+        )
+
+    def _runs(self) -> list[_PipelineRun]:
+        return [self._run_pipeline(path) for path in self.image_paths]
+
+    @staticmethod
+    def _fidelity(original: np.ndarray, decrypted: np.ndarray) -> dict[str, float | bool | None]:
+        shape_matches = original.shape == decrypted.shape
+        if not shape_matches:
+            return {
+                "shape_matches": False,
+                "exact_recovery": False,
+                "mse": None,
+                "psnr_db": None,
+            }
+        difference = original.astype(np.float64) - decrypted.astype(np.float64)
+        mse = float(np.mean(difference**2))
+        psnr = float("inf") if mse == 0.0 else float(10.0 * np.log10((255.0**2) / mse))
+        return {
+            "shape_matches": True,
+            "exact_recovery": bool(np.array_equal(original, decrypted)),
+            "mse": mse,
+            "psnr_db": psnr,
+        }
+
+    @staticmethod
+    def _histograms(image: np.ndarray) -> dict[str, np.ndarray]:
+        if image.ndim == 2:
+            return {"Gray": np.bincount(image.ravel(), minlength=256)}
+        return {
+            name: np.bincount(image[:, :, index].ravel(), minlength=256)
+            for index, name in enumerate(("R", "G", "B"))
+        }
+
+    @staticmethod
+    def _correlations(
+        image: np.ndarray,
+        sample_size: int | None,
+        seed: int | None,
+    ) -> dict[str, dict[str, float]]:
+        rng = np.random.default_rng(seed)
+        channel_items = [("Gray", image)] if image.ndim == 2 else [
+            (name, image[:, :, index]) for index, name in enumerate(("R", "G", "B"))
+        ]
+        output: dict[str, dict[str, float]] = {}
+        for channel_name, channel in channel_items:
+            output[channel_name] = {}
+            for direction in _DIRECTIONS:
+                x, y = _pixel_pairs(channel, direction)
+                x, y = _sample_pairs(x, y, sample_size, rng)
+                output[channel_name][direction] = _correlation_coefficient(x, y)
+        return output
+
+    @staticmethod
+    def _mean_abs_correlation(coefficients: dict[str, dict[str, float]]) -> float:
+        return float(np.mean([abs(value) for channel in coefficients.values() for value in channel.values()]))
+
+    @staticmethod
+    def _entropy_summary(values: dict[str, float]) -> float:
+        return values.get("average", values.get("Gray", values["overall"] if "overall" in values else 0.0))
+
+    @staticmethod
+    def _print_heading(title: str) -> None:
+        print(f"\n{title}\n{'-' * len(title)}")
+
+    @staticmethod
+    def _format_number(value: float | int | None, decimals: int = 6) -> str:
+        if value is None:
+            return "-"
+        if isinstance(value, (float, np.floating)) and np.isinf(value):
+            return "inf"
+        return f"{float(value):.{decimals}f}"
+
+    @staticmethod
+    def _yes_no(value: Any) -> str:
+        return "Yes" if bool(value) else "No"
+
+    def test_reversibility(self, *, print_result: bool = True) -> list[dict[str, Any]]:
+        """Check whether decryption reproduces every original pixel exactly."""
+        results = []
+        for run in self._runs():
+            result = {"image": str(run.image_path), **self._fidelity(run.original, run.decrypted)}
+            results.append(result)
+
+        if print_result:
+            self._print_heading("Decryption reversibility")
+            _print_ascii_table(
+                ("Image", "Shape Match", "Exact Recovery", "MSE", "PSNR (dB)"),
+                [
+                    (
+                        Path(result["image"]).name,
+                        self._yes_no(result["shape_matches"]),
+                        self._yes_no(result["exact_recovery"]),
+                        self._format_number(result["mse"]),
+                        self._format_number(result["psnr_db"]),
+                    )
+                    for result in results
+                ],
+            )
+        return results
+
+    def test_encryption_decryption(
+        self,
+        *,
+        figsize: tuple[float, float] | None = None,
+        save_path: str | Path | None = None,
+        dpi: int = 150,
+        show: bool = True,
+        print_result: bool = True,
+    ) -> dict[str, Any]:
+        """Plot one row per image: original, encrypted, and decrypted.
+
+        The returned ``axes`` array always has shape ``(N, 3)``, including
+        when only one image is tested. The caller owns the returned figure and
+        may save it again or close it with ``plt.close(result["figure"])``.
+        """
+        if not isinstance(dpi, int) or dpi <= 0:
+            raise ValueError("dpi must be a positive integer")
+
+        runs = self._runs()
+        row_count = len(runs)
+        figure, axes = plt.subplots(
+            row_count,
+            3,
+            figsize=figsize or (12.0, 3.8 * row_count),
+            squeeze=False,
+            constrained_layout=True,
+        )
+        column_titles = ("Original", "Encrypted", "Decrypted")
+        rows = []
+
+        for row_index, run in enumerate(runs):
+            fidelity = self._fidelity(run.original, run.decrypted)
+            rows.append(
+                {
+                    "image": str(run.image_path),
+                    "encryption_seconds": run.encryption_seconds,
+                    "decryption_seconds": run.decryption_seconds,
+                    **fidelity,
+                }
+            )
+            for column_index, image in enumerate((run.original, run.encrypted, run.decrypted)):
+                axis = axes[row_index, column_index]
+                if image.ndim == 2:
+                    axis.imshow(image, cmap="gray", vmin=0, vmax=255)
+                else:
+                    axis.imshow(image)
+                if row_index == 0:
+                    axis.set_title(column_titles[column_index], fontsize=13, fontweight="bold")
+                axis.axis("off")
+
+            axes[row_index, 0].text(
+                -0.04,
+                0.5,
+                run.image_path.name,
+                transform=axes[row_index, 0].transAxes,
+                rotation=90,
+                ha="right",
+                va="center",
+                fontsize=10,
+            )
+
+        saved_path: Path | None = None
+        if save_path is not None:
+            saved_path = Path(save_path).expanduser().resolve()
+            saved_path.parent.mkdir(parents=True, exist_ok=True)
+            figure.savefig(saved_path, dpi=dpi, bbox_inches="tight", facecolor="white")
+
+        if print_result:
+            self._print_heading("Encryption/decryption image comparison")
+            _print_ascii_table(
+                (
+                    "Image",
+                    "Encrypt (s)",
+                    "Decrypt (s)",
+                    "Exact Recovery",
+                    "MSE",
+                    "PSNR (dB)",
+                    "Saved Figure",
+                ),
+                [
+                    (
+                        Path(row["image"]).name,
+                        self._format_number(row["encryption_seconds"]),
+                        self._format_number(row["decryption_seconds"]),
+                        self._yes_no(row["exact_recovery"]),
+                        self._format_number(row["mse"]),
+                        self._format_number(row["psnr_db"]),
+                        str(saved_path) if saved_path is not None and index == 0 else "-",
+                    )
+                    for index, row in enumerate(rows)
+                ],
+            )
+
+        if show:
+            plt.show()
+        return {
+            "figure": figure,
+            "axes": axes,
+            "rows": rows,
+            "save_path": str(saved_path) if saved_path is not None else None,
+        }
+
+    def test_speed(
+        self,
+        *,
+        repeats: int = 3,
+        warmup: int = 0,
+        print_result: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Measure end-to-end encryption/decryption latency and throughput."""
+        if not isinstance(repeats, int) or repeats <= 0:
+            raise ValueError("repeats must be a positive integer")
+        if not isinstance(warmup, int) or warmup < 0:
+            raise ValueError("warmup must be a non-negative integer")
+
+        results = []
+        for path in self.image_paths:
+            for _ in range(warmup):
+                self._run_pipeline(path)
+            runs = [self._run_pipeline(path) for _ in range(repeats)]
+            encryption_times = np.array([run.encryption_seconds for run in runs])
+            decryption_times = np.array([run.decryption_seconds for run in runs])
+            pixel_count = runs[0].original.shape[0] * runs[0].original.shape[1]
+            encryption_mean = float(encryption_times.mean())
+            decryption_mean = float(decryption_times.mean())
+            results.append(
+                {
+                    "image": str(path),
+                    "shape": tuple(int(value) for value in runs[0].original.shape),
+                    "repeats": repeats,
+                    "encryption_seconds_mean": encryption_mean,
+                    "encryption_seconds_std": float(encryption_times.std(ddof=0)),
+                    "decryption_seconds_mean": decryption_mean,
+                    "decryption_seconds_std": float(decryption_times.std(ddof=0)),
+                    "encryption_mpixel_per_second": float(pixel_count / encryption_mean / 1e6),
+                    "decryption_mpixel_per_second": float(pixel_count / decryption_mean / 1e6),
+                    "exact_recovery": all(np.array_equal(run.original, run.decrypted) for run in runs),
+                }
+            )
+
+        if print_result:
+            self._print_heading("Encryption/decryption speed")
+            _print_ascii_table(
+                (
+                    "Image",
+                    "Shape",
+                    "Runs",
+                    "Enc Mean (s)",
+                    "Enc Std (s)",
+                    "Enc MPix/s",
+                    "Dec Mean (s)",
+                    "Dec Std (s)",
+                    "Dec MPix/s",
+                    "Exact Recovery",
+                ),
+                [
+                    (
+                        Path(result["image"]).name,
+                        "x".join(str(value) for value in result["shape"]),
+                        result["repeats"],
+                        self._format_number(result["encryption_seconds_mean"]),
+                        self._format_number(result["encryption_seconds_std"]),
+                        self._format_number(result["encryption_mpixel_per_second"], 3),
+                        self._format_number(result["decryption_seconds_mean"]),
+                        self._format_number(result["decryption_seconds_std"]),
+                        self._format_number(result["decryption_mpixel_per_second"], 3),
+                        self._yes_no(result["exact_recovery"]),
+                    )
+                    for result in results
+                ],
+            )
+        return results
+
+    def test_histogram(
+        self,
+        *,
+        plot: bool = False,
+        show: bool = False,
+        print_result: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Compare original, encrypted, and decrypted 256-bin histograms."""
+        results = []
+        for run in self._runs():
+            figures = None
+            if plot:
+                figures = {}
+                for name, image in (
+                    ("original", run.original),
+                    ("encrypted", run.encrypted),
+                    ("decrypted", run.decrypted),
+                ):
+                    figure, _ = plot_pixel_histogram(
+                        image,
+                        title=f"{run.image_path.name} - {name}",
+                        show=show,
+                    )
+                    figures[name] = figure
+            results.append(
+                {
+                    "image": str(run.image_path),
+                    "original": self._histograms(run.original),
+                    "encrypted": self._histograms(run.encrypted),
+                    "decrypted": self._histograms(run.decrypted),
+                    "figures": figures,
+                    "exact_recovery": bool(np.array_equal(run.original, run.decrypted)),
+                }
+            )
+
+        if print_result:
+            self._print_heading("Histogram analysis")
+            table_rows: list[tuple[Any, ...]] = []
+            for result in results:
+                channel_cvs = {
+                    channel: float(counts.std() / counts.mean())
+                    for channel, counts in result["encrypted"].items()
+                }
+                for channel, coefficient_of_variation in channel_cvs.items():
+                    table_rows.append(
+                        (
+                            Path(result["image"]).name,
+                            channel,
+                            self._format_number(coefficient_of_variation),
+                            self._yes_no(result["exact_recovery"]),
+                        )
+                    )
+                table_rows.append(
+                    (
+                        Path(result["image"]).name,
+                        "Average",
+                        self._format_number(float(np.mean(list(channel_cvs.values())))),
+                        self._yes_no(result["exact_recovery"]),
+                    )
+                )
+            _print_ascii_table(
+                ("Image", "Channel", "Encrypted Histogram CV", "Exact Recovery"),
+                table_rows,
+            )
+        return results
+
+    def test_entropy(self, *, print_result: bool = True) -> list[dict[str, Any]]:
+        """Calculate Shannon entropy; encrypted-channel values should approach 8."""
+        results = []
+        for run in self._runs():
+            original = calculate_information_entropy(run.original)
+            encrypted = calculate_information_entropy(run.encrypted)
+            decrypted = calculate_information_entropy(run.decrypted)
+            encrypted_summary = self._entropy_summary(encrypted)
+            results.append(
+                {
+                    "image": str(run.image_path),
+                    "original": original,
+                    "encrypted": encrypted,
+                    "decrypted": decrypted,
+                    "encrypted_average": encrypted_summary,
+                    "distance_from_ideal": 8.0 - encrypted_summary,
+                    "exact_recovery": bool(np.array_equal(run.original, run.decrypted)),
+                }
+            )
+
+        if print_result:
+            self._print_heading("Information entropy")
+            table_rows = []
+            for result in results:
+                channels = [
+                    channel
+                    for channel in ("R", "G", "B", "Gray", "average", "overall")
+                    if channel in result["encrypted"]
+                ]
+                for channel in channels:
+                    table_rows.append(
+                        (
+                            Path(result["image"]).name,
+                            channel.title(),
+                            self._format_number(result["original"].get(channel)),
+                            self._format_number(result["encrypted"][channel]),
+                            self._format_number(result["decrypted"].get(channel)),
+                            self._format_number(8.0 - result["encrypted"][channel]),
+                            self._yes_no(result["exact_recovery"]),
+                        )
+                    )
+            _print_ascii_table(
+                (
+                    "Image",
+                    "Channel",
+                    "Original (bit)",
+                    "Encrypted (bit)",
+                    "Decrypted (bit)",
+                    "Distance to 8",
+                    "Exact Recovery",
+                ),
+                table_rows,
+            )
+        return results
+
+    def test_chi_square(
+        self,
+        *,
+        alpha: float = 0.05,
+        critical_value: float | None = None,
+        print_result: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Test whether ciphertext histograms are consistent with uniformity."""
+        results = []
+        for run in self._runs():
+            original = calculate_chi_square_test(
+                run.original, alpha=alpha, critical_value=critical_value, print_result=False
+            )
+            encrypted = calculate_chi_square_test(
+                run.encrypted, alpha=alpha, critical_value=critical_value, print_result=False
+            )
+            decrypted = calculate_chi_square_test(
+                run.decrypted, alpha=alpha, critical_value=critical_value, print_result=False
+            )
+            results.append(
+                {
+                    "image": str(run.image_path),
+                    "original": original,
+                    "encrypted": encrypted,
+                    "decrypted": decrypted,
+                    "encrypted_passed": all(
+                        bool(channel_result["passed"])
+                        for channel, channel_result in encrypted.items()
+                        if channel != "average"
+                    ),
+                    "exact_recovery": bool(np.array_equal(run.original, run.decrypted)),
+                }
+            )
+
+        if print_result:
+            self._print_heading("Chi-square histogram uniformity")
+            effective_critical_value = 293.2478 if critical_value is None else critical_value
+            channel_order = [
+                channel
+                for channel in ("R", "G", "B", "Gray")
+                if any(channel in result["encrypted"] for result in results)
+            ]
+            headers = (
+                "Image",
+                *(f"{channel} Chi-square" for channel in channel_order),
+                "Average Chi-square",
+                "Critical Value",
+                "Alpha",
+                "Uniformity",
+                "Exact Recovery",
+            )
+            table_rows = []
+            for result in results:
+                table_rows.append(
+                    (
+                        Path(result["image"]).name,
+                        *(
+                            self._format_number(
+                                result["encrypted"][channel]["chi_square"]
+                                if channel in result["encrypted"]
+                                else None,
+                                4,
+                            )
+                            for channel in channel_order
+                        ),
+                        self._format_number(result["encrypted"]["average"]["chi_square"], 4),
+                        self._format_number(effective_critical_value, 4),
+                        self._format_number(alpha, 4),
+                        "Pass" if result["encrypted_passed"] else "Fail",
+                        self._yes_no(result["exact_recovery"]),
+                    )
+                )
+            _print_ascii_table(headers, table_rows)
+        return results
+
+    def test_correlation(
+        self,
+        *,
+        sample_size: int | None = 10000,
+        seed: int | None = 0,
+        plot: bool = False,
+        show: bool = False,
+        print_result: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Analyze horizontal, vertical, and diagonal adjacent-pixel correlation."""
+        if sample_size is not None and sample_size <= 0:
+            raise ValueError("sample_size must be positive or None")
+
+        results = []
+        for run in self._runs():
+            original = self._correlations(run.original, sample_size, seed)
+            encrypted = self._correlations(run.encrypted, sample_size, seed)
+            decrypted = self._correlations(run.decrypted, sample_size, seed)
+            figures = None
+            if plot:
+                figures = {}
+                for name, image in (
+                    ("original", run.original),
+                    ("encrypted", run.encrypted),
+                    ("decrypted", run.decrypted),
+                ):
+                    _, figure, _ = plot_correlation_analysis(
+                        image,
+                        sample_size=sample_size,
+                        seed=seed,
+                        title=f"{run.image_path.name} - {name}",
+                        show=show,
+                    )
+                    figures[name] = figure
+            results.append(
+                {
+                    "image": str(run.image_path),
+                    "original": original,
+                    "encrypted": encrypted,
+                    "decrypted": decrypted,
+                    "encrypted_mean_absolute": self._mean_abs_correlation(encrypted),
+                    "figures": figures,
+                    "exact_recovery": bool(np.array_equal(run.original, run.decrypted)),
+                }
+            )
+
+        if print_result:
+            self._print_heading("Adjacent-pixel correlation")
+            table_rows = []
+            for result in results:
+                direction_values = {direction: [] for direction in _DIRECTIONS}
+                for channel, directions in result["encrypted"].items():
+                    for direction, value in directions.items():
+                        direction_values[direction].append(value)
+                    mean_absolute = float(np.mean([abs(value) for value in directions.values()]))
+                    table_rows.append(
+                        (
+                            Path(result["image"]).name,
+                            channel,
+                            self._format_number(directions["horizontal"]),
+                            self._format_number(directions["vertical"]),
+                            self._format_number(directions["diagonal"]),
+                            self._format_number(mean_absolute),
+                            self._yes_no(result["exact_recovery"]),
+                        )
+                    )
+                table_rows.append(
+                    (
+                        Path(result["image"]).name,
+                        "Average",
+                        self._format_number(float(np.mean(direction_values["horizontal"]))),
+                        self._format_number(float(np.mean(direction_values["vertical"]))),
+                        self._format_number(float(np.mean(direction_values["diagonal"]))),
+                        self._format_number(result["encrypted_mean_absolute"]),
+                        self._yes_no(result["exact_recovery"]),
+                    )
+                )
+            _print_ascii_table(
+                (
+                    "Image",
+                    "Channel",
+                    "Horizontal r",
+                    "Vertical r",
+                    "Diagonal r",
+                    "Mean Abs(r)",
+                    "Exact Recovery",
+                ),
+                table_rows,
+            )
+        return results
+
+    def test_differential_attack(self, *, print_result: bool = True) -> list[dict[str, Any]]:
+        """Measure NPCR/UACI after changing one plaintext pixel by one bit."""
+        results = []
+        for path in self.image_paths:
+            original = _to_uint8_pixels(_load_image_array(path))
+            modified = original.copy()
+            modified.reshape(-1)[0] ^= np.uint8(1)
+
+            baseline_run = self._run_pipeline(original, label_path=path)
+            modified_run = self._run_pipeline(modified, label_path=path)
+            if baseline_run.encrypted.shape != modified_run.encrypted.shape:
+                raise ValueError("ciphertext shape changed after a one-bit plaintext modification")
+
+            cipher_a = baseline_run.encrypted.astype(np.int16)
+            cipher_b = modified_run.encrypted.astype(np.int16)
+            npcr = float(np.mean(cipher_a != cipher_b) * 100.0)
+            uaci = float(np.mean(np.abs(cipher_a - cipher_b)) / 255.0 * 100.0)
+            results.append(
+                {
+                    "image": str(path),
+                    "npcr_percent": npcr,
+                    "uaci_percent": uaci,
+                    "npcr_near_ideal": npcr >= 99.0,
+                    "uaci_near_ideal": 30.0 <= uaci <= 36.0,
+                    "baseline_exact_recovery": bool(
+                        np.array_equal(baseline_run.original, baseline_run.decrypted)
+                    ),
+                    "modified_exact_recovery": bool(
+                        np.array_equal(modified_run.original, modified_run.decrypted)
+                    ),
+                }
+            )
+
+        if print_result:
+            self._print_heading("Differential attack (one-bit plaintext change)")
+            _print_ascii_table(
+                (
+                    "Image",
+                    "NPCR (%)",
+                    "NPCR Near Ideal",
+                    "UACI (%)",
+                    "UACI Near Ideal",
+                    "Baseline Exact",
+                    "Modified Exact",
+                ),
+                [
+                    (
+                        Path(result["image"]).name,
+                        self._format_number(result["npcr_percent"]),
+                        self._yes_no(result["npcr_near_ideal"]),
+                        self._format_number(result["uaci_percent"]),
+                        self._yes_no(result["uaci_near_ideal"]),
+                        self._yes_no(result["baseline_exact_recovery"]),
+                        self._yes_no(result["modified_exact_recovery"]),
+                    )
+                    for result in results
+                ],
+            )
+        return results
+
+    def run_all(
+        self,
+        *,
+        speed_repeats: int = 3,
+        include_differential: bool = True,
+        include_image_comparison: bool = True,
+        show_image_comparison: bool = False,
+        print_result: bool = True,
+    ) -> dict[str, Any]:
+        """Run all analyses and return one result mapping."""
+        results: dict[str, Any] = {
+            "reversibility": self.test_reversibility(print_result=print_result),
+            "speed": self.test_speed(repeats=speed_repeats, print_result=print_result),
+            "histogram": self.test_histogram(print_result=print_result),
+            "entropy": self.test_entropy(print_result=print_result),
+            "chi_square": self.test_chi_square(print_result=print_result),
+            "correlation": self.test_correlation(print_result=print_result),
+        }
+        if include_differential:
+            results["differential"] = self.test_differential_attack(print_result=print_result)
+        if include_image_comparison:
+            results["image_comparison"] = self.test_encryption_decryption(
+                show=show_image_comparison,
+                print_result=print_result,
+            )
+        return results
+
+    # Natural aliases for code written with the old ``*_test`` naming style.
+    reversibility_test = test_reversibility
+    encryption_decryption_test = test_encryption_decryption
+    speed_test = test_speed
+    histogram_test = test_histogram
+    entropy_test = test_entropy
+    chi_square_test = test_chi_square
+    correlation_test = test_correlation
+    differential_attack_test = test_differential_attack
 
 
-def entropy_test():
-    img1_path = Path(r"C:\ImageEncryption\image\img1.png")
-    print("Image 1 entropy:", calculate_information_entropy(img1_path))
-    encrypted_img1 = encrypt_image(img1_path, verbose=False)
-    print("Encrypted Image 1 entropy:", calculate_information_entropy(encrypted_img1))
+__all__ = [
+    "Analysis",
+    "ImageInput",
+    "calculate_chi_square_test",
+    "calculate_information_entropy",
+    "plot_correlation_analysis",
+    "plot_pixel_histogram",
+]
 
-    img2_path = Path(r"C:\ImageEncryption\image\img2.png")
-    print("Image 2 entropy:", calculate_information_entropy(img2_path))
-    encrypted_img2 = encrypt_image(img2_path, verbose=False)
-    print("Encrypted Image 2 entropy:", calculate_information_entropy(encrypted_img2))
 
-    img3_path = Path(r"C:\ImageEncryption\image\img3.png")
-    print("Image 3 entropy:", calculate_information_entropy(img3_path))
-    encrypted_img3 = encrypt_image(img3_path, verbose=False)
-    print("Encrypted Image 3 entropy:", calculate_information_entropy(encrypted_img3))
-    
-def chi_square_test():
-    img1_path = Path(r"C:\ImageEncryption\images\img1.png")
-    encrypted_img1 = encrypt_image(img1_path, verbose=False)
-    calculate_chi_square_test(encrypted_img1)
-    
-    img2_path = Path(r"C:\ImageEncryption\images\img2.png")
-    encrypted_img2 = encrypt_image(img2_path, verbose=False)
-    calculate_chi_square_test(encrypted_img2)
-    
-    img3_path = Path(r"C:\ImageEncryption\images\random_noise.png")
-    encrypted_img3 = encrypt_image(img3_path, verbose=False)
-    calculate_chi_square_test(encrypted_img3)
-    
-def encrypt_test():
-    img1_path = Path(r"C:\ImageEncryption\image\img1.png")
-    encrypted_img1 = encrypt_image(img1_path, verbose=False)
-    #save to the path
-    img = pil_image.fromarray(encrypted_img1)
-    img.save(r"C:\ImageEncryption\image\encrypted_img1.png")
-    
-    img2_path = Path(r"C:\ImageEncryption\image\img2.png")
-    encrypted_img2 = encrypt_image(img2_path, verbose=False)
-    img = pil_image.fromarray(encrypted_img2)
-    img.save(r"C:\ImageEncryption\image\encrypted_img2.png")
-    
-    img3_path = Path(r"C:\ImageEncryption\image\img3.png")
-    encrypted_img3 = encrypt_image(img3_path, verbose=False)
-    img = pil_image.fromarray(encrypted_img3)
-    img.save(r"C:\ImageEncryption\image\encrypted_img3.png")
-    
-    
 if __name__ == "__main__":
-    img1_path = Path(r"C:\ImageEncryption\images\img3.png")
-    # histogram_test()
-    # correlation_test()
-    # entropy_test()
-    chi_square_test()
-    # encrypt_test()
+    print("1")
+    from .Encryption import (
+    Encrypter,
+    DeEncrypter,
+    EncryptionConfig,)
+    
+    config = EncryptionConfig(
+    seed=2026,
+    b_max=64,
+    b_min=12,
+    block_operation="xor",
+    global_parallel_size=1,)
+    MyEncrypter = Encrypter(config)
+    MyDeEncrypter = DeEncrypter(config)
+    
+    analysis = Analysis(MyEncrypter.encrypt, MyDeEncrypter.decrypt,
+                        [
+                        r"C:\ImageEncryption\images\img1.png",
+                        r"C:\ImageEncryption\images\img2.png",
+                        r"C:\ImageEncryption\images\img3.png",
+                        r"C:\ImageEncryption\images\img4.png",
+                        r"C:\ImageEncryption\images\img5.png",
+                        r"C:\ImageEncryption\images\img6.png",
+                        r"C:\ImageEncryption\images\img7.png",
+                        ])
+    result = analysis.encryption_decryption_test(show=True)
+    analysis.chi_square_test()
+    # analysis.histogram_test(plot=True, show=True)
