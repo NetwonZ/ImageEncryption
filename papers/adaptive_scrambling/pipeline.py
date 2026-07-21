@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 
-from adaptive_scrambling import ScrambleKey, key_summary, scramble_rounds, unscramble_rounds
-from chaotic_neuron import NeuronParameters, generate_chaotic_sequences, seed_from_chaos
-from dynamic_diffusion import diffuse_decrypt, diffuse_encrypt
+from .adaptive_scrambling import ScrambleKey, key_summary, scramble_rounds, unscramble_rounds
+from .chaotic_neuron import NeuronParameters, generate_chaotic_sequences, seed_from_chaos
+from .dynamic_diffusion import diffuse_decrypt, diffuse_encrypt
 
 
 @dataclass
