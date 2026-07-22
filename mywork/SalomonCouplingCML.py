@@ -110,20 +110,25 @@ class SalomoncouplingCML:
 	p/q index rule:
 		p = ((1 + xi) * i) % L
 		q = ((eta + xi*eta + 1) * i) % L
+  
+	两种初始化方式：
+	1. 直接提供参数字典和初始状态字典。
+	2. 提供用户密钥和图像路径，使用 keystream_generation 生成参数和初始状态。
 	"""
 
 	def __init__(
 		self,
 		L: int,
-		params: dict[str, float],
-		initstate: dict[str, np.ndarray | float],
+		params: dict[str, float] = None,
+		initstate: dict[str, np.ndarray | float] = None,
 		is_mod: bool = True,
 		user_key: str | None = None,
-		image_path: str | Path | None = None,
+		image_path: str | Path | np.ndarray | None = None,
 	) -> None:
 		if int(L) <= 0:
 			raise ValueError("L must be a positive integer.")
 
+		self.is_mod = bool(is_mod)
 		if params is not None and initstate is not None:
 			required = {"mu", "v", "alpha", "beta", "xi", "eta"}
 			missing = required - set(params.keys())
@@ -140,11 +145,8 @@ class SalomoncouplingCML:
 			self.beta = float(params["beta"])
 			self.xi = int(params["xi"])
 			self.eta = int(params["eta"])
-			self.is_mod = bool(is_mod)
-
 			self.x0 = np.asarray(initstate["x0"], dtype=float).copy()
-			if self.x0.size != self.L:
-				raise ValueError(f"x0 length must equal L={self.L}")
+
 
 		if user_key is None:
 			import random
@@ -155,14 +157,20 @@ class SalomoncouplingCML:
 
 		if image_path is not None:
 			from . KeyStream import keystream_generation
-			r = keystream_generation(L, image_path, user_key)
+			st = time.perf_counter()
+			key = keystream_generation(L, image_path, user_key)
+			print(f"[SalomonCouplingCML] keystream_generation took {time.perf_counter() - st:.6f} seconds")
 			self.L = int(L)
-			self.mu = float(r["mu"])
-			self.v = float(r["v"])
-			self.alpha = float(r["alpha"])
-			self.beta = float(r["beta"])
+			self.mu = float(key["mu"])
+			self.v = float(key["v"])
+			self.alpha = float(key["alpha"])
+			self.beta = float(key["beta"])
 			self.xi = 1
 			self.eta = 1
+			self.x0 = np.asarray(key["X"], dtype=float).copy()
+   
+		if self.x0.size != self.L:
+			raise ValueError(f"x0 length must equal L={self.L}")
    
 		self.original_params = {
 			"mu": self.mu,
@@ -287,10 +295,9 @@ class SalomoncouplingCML:
 
 		return states
 
-	def KeyMatrix_generation():
-		"""根据初始状态生成用于加密的秘钥矩阵/序列"""
 
-		pass
+
+
 
 
 	#sym:generate_random_bits_file
@@ -1920,7 +1927,7 @@ class SalomoncouplingCML:
 
 
 if __name__ == "__main__":
-	L = 100
+	L = 512*512
 	params = {
 		"mu": 5,
 		"v": 20,
@@ -1936,10 +1943,12 @@ if __name__ == "__main__":
 
 	N = 28
 	cml.generate_rdseq_fast(1)
+ 
 	st = time.time()
 	cml.generate_rdseq_fast(N)
 	et = time.time()
 	print(f"Time taken for {N} steps: {et - st:.6f} seconds")
+	
 
 
 	# cml.vis_lattice_n(lattice_index=25)
@@ -1984,7 +1993,7 @@ if __name__ == "__main__":
 # 		save_path="mywork/output/salomonV2_lyapunov_scan_alpha_beta.npz",
 # 		timestamp_on_exists=True,
 # 	)
-# 	plot_path = cml.last_scan_path if cml.last_scan_path is not None else None
+	plot_path = cml.last_scan_path if cml.last_scan_path is not None else None
 # 	cml.plot_ked_keb(plot_path, save_fig_path="mywork/output/salomonV2_lyapunov_scan_alpha_beta.png")
 #  
 	# cml.lyap_scan(

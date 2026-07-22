@@ -1291,28 +1291,28 @@ if __name__ == "__main__":
     b_max=64,
     b_min=12,
     block_operation="xor",
-    global_parallel_size=1,)
+    global_parallel_size=64,)
     MyEncrypter = Encrypter(config)
     MyDeEncrypter = DeEncrypter(config)
     
     analysis = Analysis(MyEncrypter.encrypt, MyDeEncrypter.decrypt,
                         [
-                        r"C:\ImageEncryption\images\img1.png",
-                        r"C:\ImageEncryption\images\img2.png",
-                        r"C:\ImageEncryption\images\img3.png",
-                        r"C:\ImageEncryption\images\img4.png",
+                        # r"C:\ImageEncryption\images\img1.png",
+                        # r"C:\ImageEncryption\images\img2.png",
+                        # r"C:\ImageEncryption\images\img3.png",
+                        # r"C:\ImageEncryption\images\img4.png",
                         r"C:\ImageEncryption\images\img5.png",
                         r"C:\ImageEncryption\images\img6.png",
                         r"C:\ImageEncryption\images\img7.png",
                         ])
-    # result = analysis.encryption_decryption_test(show=True)
-    #卡方检验
-    # analysis.chi_square_test()
+    result = analysis.encryption_decryption_test(show=True)
+    #卡方检验 global_parallel_size居然会影响卡方检验的结果，取64不错
+    analysis.chi_square_test()
     #直方图
     # analysis.histogram_test(plot=True, show=True)
     #相关性分析
-    # analysis.test_correlation(plot=False, show=True)
+    analysis.test_correlation(plot=False, show=True)
     #信息熵
-    # analysis.entropy_test()
+    analysis.entropy_test()
     #差分攻击
     analysis.differential_attack_test()
