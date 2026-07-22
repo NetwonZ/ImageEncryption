@@ -150,14 +150,9 @@ def test_differential_attack(
 
 if __name__ == "__main__":
     demo_images = [
-        BASE_DIR / "images" / "img3.png",
-        BASE_DIR / "images" / "img4.png",
-        BASE_DIR / "images" / "img5.png",
-        BASE_DIR / "images" / "img6.png",
-        BASE_DIR / "images" / "img7.png",
-        BASE_DIR / "output" / "demo" / "img3.png",
+        r"images\img3.png",
+        r"images\img4.png",
+        r"images\img5.png",
     ]
-    available = [p for p in demo_images if p.exists()]
-    if not available:
-        raise SystemExit("未找到测试图像：请调用test_differential_attack并传入至少一张正方形灰度图。")
-    test_differential_attack(available)
+    # available = [p for p in demo_images if p.exists()]
+    test_differential_attack(demo_images)
