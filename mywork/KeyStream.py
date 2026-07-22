@@ -169,7 +169,7 @@ def _finalize_output(params: dict[str, mpf], sequence: list[mpf] | np.ndarray) -
 
 def keystream_generation(
     L: int,
-    plaintext_image_path: str | Path,
+    plaintext_image: str | Path | np.ndarray,
     user_key: str,
     *,
     use_high_precision: bool = False,
@@ -187,13 +187,21 @@ def keystream_generation(
     if not isinstance(L, (int, np.integer)) or L <= 0:
         raise ValueError("L must be a positive integer")
 
-    image_path = Path(plaintext_image_path)
-    if not image_path.is_file():
-        raise FileNotFoundError(f"Plaintext image not found: {image_path}")
-
-    plaintext_bytes = image_path.read_bytes()
-    if not plaintext_bytes:
-        raise ValueError(f"Plaintext image is empty: {image_path}")
+    if isinstance(plaintext_image, (str, Path)):
+        image_path = Path(plaintext_image)
+        if not image_path.is_file():
+            raise FileNotFoundError(f"Plaintext image not found: {image_path}")
+        plaintext_bytes = image_path.read_bytes()
+        if not plaintext_bytes:
+            raise ValueError(f"Plaintext image is empty: {image_path}")
+    else:
+        image_array = np.ascontiguousarray(np.asarray(plaintext_image))
+        if image_array.size == 0:
+            raise ValueError("Plaintext image array is empty")
+        # Include layout metadata so arrays with identical raw bytes but different
+        # shapes or dtypes derive different chaotic parameters.
+        array_header = f"shape={image_array.shape};dtype={image_array.dtype.str};".encode("ascii")
+        plaintext_bytes = array_header + image_array.tobytes(order="C")
 
     params = _derive_chaos_parameters(plaintext_bytes, user_key)
     if use_high_precision:
