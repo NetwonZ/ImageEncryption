@@ -1724,8 +1724,8 @@ if __name__ == "__main__":
                         # r"C:\ImageEncryption\images\img2.png",
                         # r"C:\ImageEncryption\images\img3.png",
                         # r"C:\ImageEncryption\images\img4.png",
-                        r"C:\ImageEncryption\images\img5.png",
-                        r"C:\ImageEncryption\images\img6.png",
+                        # r"C:\ImageEncryption\images\img5.png",
+                        # r"C:\ImageEncryption\images\img6.png",
                         r"C:\ImageEncryption\images\img7.png",
                         ])
     # result = analysis.encryption_decryption_test(show=True)
@@ -1742,12 +1742,12 @@ if __name__ == "__main__":
     #秘钥敏感性分析
     results = analysis.test_key_sensitivity(delta=1e-14)
     #经典攻击
-    result = analysis.classic_attack_test(
-        groups=[
-            (0, 1),              # 按 image_paths 下标选择
-            ("img5.png", "img6.png"),  # 按文件名选择
-        ],
-        show=True,
-        save_path="mywork/outputs/classic_attack.png",
-    )
+    # result = analysis.classic_attack_test(
+    #     groups=[
+    #         (0, 1),              # 按 image_paths 下标选择
+    #         ("img5.png", "img6.png"),  # 按文件名选择
+    #     ],
+    #     show=True,
+    #     save_path="mywork/outputs/classic_attack.png",
+    # )
         

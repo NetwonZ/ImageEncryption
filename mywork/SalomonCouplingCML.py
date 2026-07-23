@@ -45,10 +45,15 @@ if njit is not None:
 			right = fx[i + 1] if i < L - 1 else fx[0]
 			fp = fx[p_idx[i]]
 			fq = fx[q_idx[i]]
-			value = alpha_scale - math.cos(angle_factor * (left + fx[i] + right))
-			value += beta_scale * math.sqrt(fp * fp + fq * fq)
+			alpha_part = alpha_scale - math.cos(angle_factor * (left + fx[i] + right))
+			beta_part = beta_scale * math.sqrt(fp * fp + fq * fq)
 			if is_mod:
-				value = value % 1.0
+				# (A + B) mod 1 == ((A mod 1) + (B mod 1)) mod 1.
+				# Reduce both terms before adding them so a tiny alpha
+				# perturbation is not swallowed by a much larger beta term.
+				value = (alpha_part % 1.0 + beta_part % 1.0) % 1.0
+			else:
+				value = alpha_part + beta_part
 			x_next[i] = value
 
 		return x_next
@@ -84,10 +89,14 @@ if njit is not None:
 				right = fx[i + 1] if i < L - 1 else fx[0]
 				fp = fx[p_idx[i]]
 				fq = fx[q_idx[i]]
-				value = (10.0 ** alpha) - math.cos(angle_factor * (left + fx[i] + right))
-				value += (10.0 ** beta) * math.sqrt(fp * fp + fq * fq)
+				alpha_part = (10.0 ** alpha) - math.cos(angle_factor * (left + fx[i] + right))
+				beta_part = (10.0 ** beta) * math.sqrt(fp * fp + fq * fq)
 				if is_mod:
-					value = value % 1.0
+					# Reduce each contribution before summation for the same
+					# numerical-stability reason as in _step_numba.
+					value = (alpha_part % 1.0 + beta_part % 1.0) % 1.0
+				else:
+					value = alpha_part + beta_part
 				x_next[i] = value
 				x_values[t, i] = value
 
@@ -1909,14 +1918,21 @@ class SalomoncouplingCML:
 			np.multiply(sum_buffer, 2.0 * np.pi, out=sum_buffer)
 			np.cos(sum_buffer, out=sum_buffer)
 			np.multiply(sum_buffer, -1.0, out=sum_buffer)
-			np.add(sum_buffer, 10.0 ** self.alpha, out=sum_buffer)
+			alpha_scale = 10.0 ** self.alpha
+			beta_scale = 10.0 ** self.beta
+			np.add(sum_buffer, alpha_scale, out=sum_buffer)
+			if self.is_mod:
+				# Apply the same modular decomposition as the Numba path.
+				np.mod(sum_buffer, 1.0, out=sum_buffer)
 			np.take(fx, self._p_idx, out=fx_p)
 			np.take(fx, self._q_idx, out=fx_q)
 			np.multiply(fx_p, fx_p, out=fx_p)
 			np.multiply(fx_q, fx_q, out=fx_q)
 			np.add(fx_p, fx_q, out=fx_p)
 			np.sqrt(fx_p, out=fx_p)
-			np.multiply(fx_p, 10.0 ** self.beta, out=fx_p)
+			np.multiply(fx_p, beta_scale, out=fx_p)
+			if self.is_mod:
+				np.mod(fx_p, 1.0, out=fx_p)
 			np.add(sum_buffer, fx_p, out=x)
 			if self.is_mod:
 				np.mod(x, 1.0, out=x)
