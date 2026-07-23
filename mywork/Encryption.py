@@ -422,6 +422,7 @@ class Encrypter:
         blocks: tuple[ImageBlock, ...],
         height: int,
         width: int,
+        print_profile: bool = False,
     ) -> EncryptionKeyMaterial:
         """根据初始状态生成用于加密的秘钥矩阵/序列。"""
         recorder = _ProfileRecorder("Key material generation")
@@ -570,7 +571,8 @@ class Encrypter:
             global_key_rule_id=global_key_rule_id,
         )
         recorder.record("Key material packaging", started)
-        print(recorder.build().format())
+        if print_profile:
+            print(recorder.build().format())
         return key_material
 
     def generate_key_material_old(

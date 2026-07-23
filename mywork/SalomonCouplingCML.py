@@ -159,7 +159,6 @@ class SalomoncouplingCML:
 			from . KeyStream import keystream_generation
 			st = time.perf_counter()
 			key = keystream_generation(L, image_path, user_key)
-			print(f"[SalomonCouplingCML] keystream_generation took {time.perf_counter() - st:.6f} seconds")
 			self.L = int(L)
 			self.mu = float(key["mu"])
 			self.v = float(key["v"])
