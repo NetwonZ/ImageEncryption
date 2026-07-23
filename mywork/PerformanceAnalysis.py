@@ -17,6 +17,10 @@ _DIRECTIONS = {
     "vertical": (1, 0),
     "diagonal": (1, 1),
 }
+_BIT_COUNT_LUT = np.unpackbits(
+    np.arange(256, dtype=np.uint8)[:, np.newaxis],
+    axis=1,
+).sum(axis=1)
 
 
 def _print_ascii_table(headers: tuple[str, ...], rows: list[tuple[Any, ...]]) -> None:
@@ -497,7 +501,8 @@ class Analysis:
 
     Notes
     -----
-    Every public test method executes both supplied callables. Results are
+    Most test methods execute both supplied callables. Attack analyses invoke
+    only the cryptographic direction required by the attack. Results are
     returned as ordinary dictionaries for use in notebooks, JSON conversion,
     or further statistical processing. ``print_result=True`` also prints a
     compact human-readable summary.
@@ -526,6 +531,12 @@ class Analysis:
         self.encryption_function = encryption_function
         self.decryption_function = decryption_function
         self.image_paths = normalized_paths
+
+    def _encryption_owner(self) -> Any:
+        owner = getattr(self.encryption_function, "__self__", None)
+        if owner is None and hasattr(self.encryption_function, "func"):
+            owner = getattr(self.encryption_function.func, "__self__", None)
+        return owner
 
     @staticmethod
     def _invoke(function: CryptFunction, *args: Any) -> Any:
@@ -1182,6 +1193,147 @@ class Analysis:
             )
         return results
 
+    def test_key_sensitivity(
+        self,
+        *,
+        delta: float = 1e-14,
+        print_result: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Measure CML key sensitivity by perturbing one parameter at a time.
+
+        NBCR is the percentage of changed bits across all uint8 ciphertext
+        components. A key-sensitive cipher should produce a value near 50% for
+        a tiny change to ``mu``, ``v``, ``alpha``, or ``beta``.
+
+        This test requires ``encryption_function`` to be a bound method whose
+        owner provides ``set_cml()`` and ``resume_cml()`` (normally
+        ``Encrypter.encrypt``).
+        """
+        delta = float(delta)
+        if not np.isfinite(delta) or delta == 0.0:
+            raise ValueError("delta must be a finite, non-zero number")
+
+        controller = self._encryption_owner()
+        if controller is None or not callable(getattr(controller, "set_cml", None)):
+            raise TypeError(
+                "test_key_sensitivity requires a bound encryption function whose owner "
+                "implements set_cml()"
+            )
+        if not callable(getattr(controller, "resume_cml", None)):
+            raise TypeError("the encryption-function owner must implement resume_cml()")
+
+        def encrypt_only(image: ImageInput) -> np.ndarray:
+            encryption_result = self._invoke(self.encryption_function, image)
+            encrypted_value, _ = self._unpack_encryption_result(encryption_result)
+            return _to_uint8_pixels(_load_image_array(encrypted_value))
+
+        parameter_names = ("mu", "v", "alpha", "beta")
+        results: list[dict[str, Any]] = []
+        for path in self.image_paths:
+            try:
+                baseline_parameters = controller.set_cml(image=path)
+                baseline_cipher = encrypt_only(path)
+            finally:
+                controller.resume_cml()
+
+            parameter_results: dict[str, dict[str, float]] = {}
+            for parameter_name in parameter_names:
+                try:
+                    defaults = controller.set_cml(image=path)
+                    default_value = float(defaults[parameter_name])
+                    perturbed_value = default_value + delta
+                    if perturbed_value == default_value:
+                        raise ValueError(
+                            f"delta={delta!r} is too small to change {parameter_name} "
+                            f"at its current floating-point magnitude"
+                        )
+                    effective = controller.set_cml(**{parameter_name: perturbed_value})
+                    perturbed_cipher = encrypt_only(path)
+                finally:
+                    controller.resume_cml()
+
+                if baseline_cipher.shape != perturbed_cipher.shape:
+                    raise ValueError(
+                        f"ciphertext shape changed after perturbing {parameter_name}: "
+                        f"{baseline_cipher.shape} != {perturbed_cipher.shape}"
+                    )
+                xor_values = np.bitwise_xor(baseline_cipher, perturbed_cipher)
+                changed_bits = int(_BIT_COUNT_LUT[xor_values].sum(dtype=np.uint64))
+                total_bits = int(xor_values.size * 8)
+                nbcr = changed_bits / total_bits * 100.0
+                npcr = float(np.mean(baseline_cipher != perturbed_cipher) * 100.0)
+                parameter_results[parameter_name] = {
+                    "default_value": default_value,
+                    "perturbed_value": float(effective[parameter_name]),
+                    "delta": delta,
+                    "changed_bits": changed_bits,
+                    "total_bits": total_bits,
+                    "nbcr_percent": float(nbcr),
+                    "npcr_percent": npcr,
+                    "distance_from_ideal_nbcr": float(abs(50.0 - nbcr)),
+                }
+
+            results.append(
+                {
+                    "image": str(path),
+                    "delta": delta,
+                    "baseline_parameters": {
+                        name: float(baseline_parameters[name]) for name in parameter_names
+                    },
+                    "parameters": parameter_results,
+                    "average_nbcr_percent": float(
+                        np.mean([values["nbcr_percent"] for values in parameter_results.values()])
+                    ),
+                    "average_npcr_percent": float(
+                        np.mean([values["npcr_percent"] for values in parameter_results.values()])
+                    ),
+                }
+            )
+
+        if print_result:
+            self._print_heading("CML key sensitivity")
+            table_rows: list[tuple[Any, ...]] = []
+            for result in results:
+                for parameter_name, values in result["parameters"].items():
+                    table_rows.append(
+                        (
+                            Path(result["image"]).name,
+                            parameter_name,
+                            self._format_number(values["default_value"], 15),
+                            self._format_number(values["perturbed_value"], 15),
+                            f"{values['delta']:.3e}",
+                            self._format_number(values["nbcr_percent"]),
+                            self._format_number(values["npcr_percent"]),
+                            self._format_number(values["distance_from_ideal_nbcr"]),
+                        )
+                    )
+                table_rows.append(
+                    (
+                        Path(result["image"]).name,
+                        "Average",
+                        "-",
+                        "-",
+                        "-",
+                        self._format_number(result["average_nbcr_percent"]),
+                        self._format_number(result["average_npcr_percent"]),
+                        self._format_number(abs(50.0 - result["average_nbcr_percent"])),
+                    )
+                )
+            _print_ascii_table(
+                (
+                    "Image",
+                    "Parameter",
+                    "Default Value",
+                    "Perturbed Value",
+                    "Delta",
+                    "NBCR (%)",
+                    "NPCR (%)",
+                    "NBCR Distance to 50",
+                ),
+                table_rows,
+            )
+        return results
+
     def test_differential_attack(self, *, print_result: bool = True) -> list[dict[str, Any]]:
         """Measure NPCR/UACI after changing one plaintext pixel by one bit."""
         results = []
@@ -1242,11 +1394,250 @@ class Analysis:
             )
         return results
 
+    def _resolve_classic_attack_selector(self, selector: int | str | Path) -> Path:
+        if isinstance(selector, int):
+            try:
+                return self.image_paths[selector]
+            except IndexError as error:
+                raise IndexError(
+                    f"classic-attack image index {selector} is outside the configured image list"
+                ) from error
+
+        candidate = Path(selector).expanduser()
+        if candidate.is_file():
+            candidate = candidate.resolve()
+            if candidate in self.image_paths:
+                return candidate
+        name_matches = [path for path in self.image_paths if path.name == candidate.name]
+        if len(name_matches) == 1:
+            return name_matches[0]
+        if len(name_matches) > 1:
+            raise ValueError(f"image selector is ambiguous: {selector}")
+        raise FileNotFoundError(
+            f"classic-attack selector {selector!r} is not one of the configured image paths"
+        )
+
+    @staticmethod
+    def _classic_attack_npsi(
+        plaintext_xor: np.ndarray,
+        ciphertext_xor: np.ndarray,
+    ) -> tuple[float, float, int, int]:
+        if plaintext_xor.shape != ciphertext_xor.shape:
+            raise ValueError(
+                "plaintext XOR and ciphertext XOR images must have identical shapes; "
+                f"got {plaintext_xor.shape} and {ciphertext_xor.shape}"
+            )
+        if plaintext_xor.ndim not in (2, 3):
+            raise ValueError("classic attack images must be grayscale or RGB arrays")
+
+        changed = plaintext_xor != ciphertext_xor
+        component_count = 1 if plaintext_xor.ndim == 2 else int(plaintext_xor.shape[2])
+        changed_components = int(changed.sum())
+        pixel_count = int(np.prod(plaintext_xor.shape[:2]))
+        npsi = changed_components / component_count
+        percentage = npsi / pixel_count * 100.0
+        return float(npsi), float(percentage), changed_components, pixel_count * component_count
+
+    def test_classic_attack(
+        self,
+        groups: list[tuple[int | str | Path, int | str | Path]] | None = None,
+        *,
+        figsize: tuple[float, float] | None = None,
+        save_path: str | Path | None = None,
+        dpi: int = 150,
+        show: bool = True,
+        print_result: bool = True,
+    ) -> dict[str, Any]:
+        """Run the paper-style selective-plaintext classic attack analysis.
+
+        Each group contains ``(Q1, Q2)`` selectors. Selectors can be indices
+        into ``image_paths`` or image names/paths from that configured list.
+        The six panels per group are ``Q1``, ``Q2``, ``Q1 XOR Q2``, ``D1``,
+        ``D2``, and ``D1 XOR D2``. NPSI follows the paper's criterion
+        ``Q1 XOR Q2 != D1 XOR D2``. For RGB images, component counts are
+        averaged over channels so NPSI is reported on the pixel scale.
+        """
+        if not isinstance(dpi, int) or dpi <= 0:
+            raise ValueError("dpi must be a positive integer")
+
+        if groups is None:
+            if len(self.image_paths) < 2 or len(self.image_paths) % 2:
+                raise ValueError(
+                    "groups must be provided when image_paths does not contain an even number of images"
+                )
+            group_specs: list[tuple[int | str | Path, int | str | Path]] = list(
+                zip(self.image_paths[::2], self.image_paths[1::2], strict=True)
+            )
+        else:
+            if not isinstance(groups, list) or not groups:
+                raise ValueError("groups must be a non-empty list of (Q1, Q2) pairs")
+            group_specs = []
+            for group in groups:
+                if not isinstance(group, (tuple, list)) or len(group) != 2:
+                    raise ValueError("each classic-attack group must contain exactly two selectors")
+                group_specs.append((group[0], group[1]))
+
+        def encrypt_only(image: Path) -> np.ndarray:
+            encryption_result = self._invoke(self.encryption_function, image)
+            encrypted_value, _ = self._unpack_encryption_result(encryption_result)
+            return _to_uint8_pixels(_load_image_array(encrypted_value))
+
+        attack_groups: list[dict[str, Any]] = []
+        for group_index, (q1_selector, q2_selector) in enumerate(group_specs):
+            q1_path = self._resolve_classic_attack_selector(q1_selector)
+            q2_path = self._resolve_classic_attack_selector(q2_selector)
+            if q1_path == q2_path:
+                raise ValueError("Q1 and Q2 in a classic-attack group must be different images")
+
+            q1 = _to_uint8_pixels(_load_image_array(q1_path))
+            q2 = _to_uint8_pixels(_load_image_array(q2_path))
+            if q1.shape != q2.shape:
+                raise ValueError(
+                    f"Q1 and Q2 must have identical shapes, got {q1.shape} and {q2.shape}"
+                )
+            d1 = encrypt_only(q1_path)
+            d2 = encrypt_only(q2_path)
+
+            # A genuine grayscale source may be converted to RGB by the
+            # encryption callable. Repeat its channels for a fair comparison.
+            if q1.ndim == q2.ndim == 2 and d1.ndim == d2.ndim == 3:
+                q1 = np.repeat(q1[:, :, np.newaxis], d1.shape[2], axis=2)
+                q2 = np.repeat(q2[:, :, np.newaxis], d2.shape[2], axis=2)
+            if d1.shape != d2.shape or d1.shape != q1.shape:
+                raise ValueError(
+                    "plaintext and ciphertext pairs must have identical shapes for the "
+                    f"classic attack, got Q={q1.shape}, D1={d1.shape}, D2={d2.shape}"
+                )
+
+            q_xor = np.bitwise_xor(q1, q2)
+            d_xor = np.bitwise_xor(d1, d2)
+            npsi, percentage, changed_components, total_components = self._classic_attack_npsi(
+                q_xor, d_xor
+            )
+            changed_mask = q_xor != d_xor
+            if changed_mask.ndim == 2:
+                npsi_by_channel = {"Gray": int(changed_mask.sum())}
+            else:
+                npsi_by_channel = {
+                    channel: int(changed_mask[:, :, channel_index].sum())
+                    for channel_index, channel in enumerate(("R", "G", "B"))
+                }
+            attack_groups.append(
+                {
+                    "group_index": group_index,
+                    "q1_path": str(q1_path),
+                    "q2_path": str(q2_path),
+                    "q1_name": q1_path.stem,
+                    "q2_name": q2_path.stem,
+                    "q1": q1,
+                    "q2": q2,
+                    "q_xor": q_xor,
+                    "d1": d1,
+                    "d2": d2,
+                    "d_xor": d_xor,
+                    "npsi": npsi,
+                    "npsi_rounded": int(round(npsi)),
+                    "npsi_by_channel": npsi_by_channel,
+                    "percentage": percentage,
+                    "changed_components": changed_components,
+                    "total_components": total_components,
+                }
+            )
+
+        row_count = len(attack_groups)
+        figure, axes = plt.subplots(
+            row_count,
+            6,
+            figsize=figsize or (18.0, 3.25 * row_count),
+            squeeze=False,
+            constrained_layout=True,
+        )
+        panel_titles = ("Q1", "Q2", "Q1 XOR Q2", "D1", "D2", "D1 XOR D2")
+        panel_labels = "abcdefghijklmnopqrstuvwxyz"
+        for row_index, group in enumerate(attack_groups):
+            images = (
+                group["q1"],
+                group["q2"],
+                group["q_xor"],
+                group["d1"],
+                group["d2"],
+                group["d_xor"],
+            )
+            for column_index, image in enumerate(images):
+                axis = axes[row_index, column_index]
+                if image.ndim == 2:
+                    axis.imshow(image, cmap="gray", vmin=0, vmax=255)
+                else:
+                    axis.imshow(image)
+                if row_index == 0:
+                    axis.set_title(panel_titles[column_index], fontsize=11, fontweight="bold")
+                panel_number = row_index * 6 + column_index
+                label = (
+                    f"({panel_labels[panel_number]})"
+                    if panel_number < len(panel_labels)
+                    else f"({panel_number + 1})"
+                )
+                axis.text(
+                    0.5,
+                    -0.08,
+                    label,
+                    transform=axis.transAxes,
+                    ha="center",
+                    va="top",
+                    fontsize=10,
+                )
+                axis.axis("off")
+            axes[row_index, 0].text(
+                -0.06,
+                0.5,
+                f"{group['q1_name']} / {group['q2_name']}",
+                transform=axes[row_index, 0].transAxes,
+                rotation=90,
+                ha="right",
+                va="center",
+                fontsize=9,
+            )
+        figure.suptitle("Classic selective-plaintext attack analysis", fontsize=14)
+
+        saved_path: Path | None = None
+        if save_path is not None:
+            saved_path = Path(save_path).expanduser().resolve()
+            saved_path.parent.mkdir(parents=True, exist_ok=True)
+            figure.savefig(saved_path, dpi=dpi, bbox_inches="tight", facecolor="white")
+        if show:
+            plt.show()
+
+        if print_result:
+            self._print_heading("Classic attack analysis")
+            _print_ascii_table(
+                ("Q1 or C1", "Q2 or C2", "NPSI", "Percentage (%)"),
+                [
+                    (
+                        group["q1_name"],
+                        group["q2_name"],
+                        f"{group['npsi_rounded']:,}",
+                        f"{group['percentage']:.4f}",
+                    )
+                    for group in attack_groups
+                ],
+            )
+        return {
+            "figure": figure,
+            "axes": axes,
+            "groups": attack_groups,
+            "save_path": str(saved_path) if saved_path is not None else None,
+        }
+
     def run_all(
         self,
         *,
         speed_repeats: int = 3,
         include_differential: bool = True,
+        include_key_sensitivity: bool | None = None,
+        key_sensitivity_delta: float = 1e-14,
+        include_classic_attack: bool = False,
+        classic_attack_groups: list[tuple[int | str | Path, int | str | Path]] | None = None,
+        show_classic_attack: bool = False,
         include_image_comparison: bool = True,
         show_image_comparison: bool = False,
         print_result: bool = True,
@@ -1262,6 +1653,25 @@ class Analysis:
         }
         if include_differential:
             results["differential"] = self.test_differential_attack(print_result=print_result)
+        controller = self._encryption_owner()
+        supports_key_sensitivity = (
+            controller is not None
+            and callable(getattr(controller, "set_cml", None))
+            and callable(getattr(controller, "resume_cml", None))
+        )
+        if include_key_sensitivity is True or (
+            include_key_sensitivity is None and supports_key_sensitivity
+        ):
+            results["key_sensitivity"] = self.test_key_sensitivity(
+                delta=key_sensitivity_delta,
+                print_result=print_result,
+            )
+        if include_classic_attack:
+            results["classic_attack"] = self.test_classic_attack(
+                groups=classic_attack_groups,
+                show=show_classic_attack,
+                print_result=print_result,
+            )
         if include_image_comparison:
             results["image_comparison"] = self.test_encryption_decryption(
                 show=show_image_comparison,
@@ -1277,7 +1687,9 @@ class Analysis:
     entropy_test = test_entropy
     chi_square_test = test_chi_square
     correlation_test = test_correlation
+    key_sensitivity_test = test_key_sensitivity
     differential_attack_test = test_differential_attack
+    classic_attack_test = test_classic_attack
 
 
 __all__ = [
@@ -1326,4 +1738,16 @@ if __name__ == "__main__":
     #信息熵
     # analysis.entropy_test()
     #差分攻击
-    analysis.test_differential_attack()
+    # analysis.test_differential_attack()
+    #秘钥敏感性分析
+    results = analysis.test_key_sensitivity(delta=1e-14)
+    #经典攻击
+    result = analysis.classic_attack_test(
+        groups=[
+            (0, 1),              # 按 image_paths 下标选择
+            ("img5.png", "img6.png"),  # 按文件名选择
+        ],
+        show=True,
+        save_path="mywork/outputs/classic_attack.png",
+    )
+        
