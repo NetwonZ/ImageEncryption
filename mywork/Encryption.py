@@ -904,6 +904,10 @@ class Encrypter:
         profile = recorder.build()
         if print_profile:
             print(profile.format())
+
+        #每次加密后，都将self._cml 置为None，确保下一次加密时重新初始化CML
+        self._cml = None
+        
         return EncryptionResult(encrypted_image=encrypted_image, metadata=metadata, profile=profile)
 
 
