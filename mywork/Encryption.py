@@ -359,8 +359,68 @@ class Encrypter:
         self.config = config or EncryptionConfig()
         self._cml: SalomoncouplingCML | None = None
         self._cml_source_array: np.ndarray | None = None
+        self._cml_default_parameters: dict[str, float] | None = None
         if key_source is not None:
             self._initialize_cml(key_source)
+
+    def set_cml(
+        self,
+        image: str | Path | np.ndarray | pil_image.Image | None = None,
+        *,
+        mu: float | None = None,
+        v: float | None = None,
+        alpha: float | None = None,
+        beta: float | None = None,
+    ) -> dict[str, float]:
+        """Temporarily replace selected CML parameters.
+
+        Pass ``image`` when no CML has been initialized yet. The image-derived
+        default parameters are saved before any replacements are applied.
+        ``resume_cml()`` restores that snapshot. The returned mapping contains
+        the effective parameter values after the update.
+        """
+        if image is not None:
+            self._initialize_cml(image)
+            self._cml_default_parameters = None
+        if self._cml is None:
+            raise RuntimeError("CML is not initialized; pass image=... to set_cml() first")
+
+        if self._cml_default_parameters is None:
+            self._cml_default_parameters = {
+                name: float(getattr(self._cml, name))
+                for name in ("mu", "v", "alpha", "beta")
+            }
+
+        updates = {"mu": mu, "v": v, "alpha": alpha, "beta": beta}
+        validated_updates: dict[str, float] = {}
+        for name, value in updates.items():
+            if value is None:
+                continue
+            numeric_value = float(value)
+            if not np.isfinite(numeric_value):
+                raise ValueError(f"{name} must be finite")
+            validated_updates[name] = numeric_value
+        for name, value in validated_updates.items():
+            setattr(self._cml, name, value)
+
+        return {
+            name: float(getattr(self._cml, name))
+            for name in ("mu", "v", "alpha", "beta")
+        }
+
+    def resume_cml(self) -> dict[str, float] | None:
+        """Restore the CML parameters saved by ``set_cml()``.
+
+        Encryption currently releases its CML after each call. In that case
+        there is no live object to update, but clearing the saved snapshot makes
+        the next image-dependent initialization use its unmodified defaults.
+        """
+        restored = self._cml_default_parameters
+        if self._cml is not None and restored is not None:
+            for name, value in restored.items():
+                setattr(self._cml, name, value)
+        self._cml_default_parameters = None
+        return dict(restored) if restored is not None else None
 
     def _initialize_cml(self, image: str | Path | np.ndarray | pil_image.Image) -> None:
         """Create and warm up image-dependent CML outside encryption timing."""
