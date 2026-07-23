@@ -10,6 +10,12 @@ from mpmath.ctx_mp_python import mpf
 import random
 
 from .SalomonCouplingCML import *
+from contextvars import ContextVar
+from typing import Callable
+
+_IMAGE_HASH_HOOK: ContextVar[
+    Callable[[np.ndarray], None] | None
+] = ContextVar("image_hash_hook", default=None)
 
 # 使用高精度浮点，避免在中间迭代阶段过早退化到双精度
 mp.mp.dps = 80
@@ -36,6 +42,9 @@ def _derive_chaos_parameters(plaintext_bytes: bytes, user_key: str) -> dict[str,
     # 转成 256 位二进制并按固定分段提取参数
     image_hash_bits = np.unpackbits(np.frombuffer(digest, dtype=np.uint8))
     user_key_bits = _parse_user_key_bits(user_key)
+    hook = _IMAGE_HASH_HOOK.get()
+    if hook is not None:
+        hook(image_hash_bits.copy())
     H = np.bitwise_xor(image_hash_bits, user_key_bits)
 
     # 全局扰动因子（6 位）

@@ -474,6 +474,7 @@ class _PipelineRun:
     decrypted: np.ndarray
     encryption_seconds: float
     decryption_seconds: float
+    image_hash_bits: np.ndarray | None = None
 
 
 class Analysis:
@@ -584,10 +585,19 @@ class Analysis:
         return result
 
     def _run_pipeline(self, image: ImageInput, *, label_path: Path | None = None) -> _PipelineRun:
+        from .KeyStream import _IMAGE_HASH_HOOK
+        captured = {"image_hash_bits": None}
+        token = _IMAGE_HASH_HOOK.set(
+            lambda bits: captured.update(image_hash_bits=bits.copy())
+        )
+        
         original = _to_uint8_pixels(_load_image_array(image))
 
         started = time.perf_counter()
-        encryption_result = self._invoke(self.encryption_function, image)
+        try:
+            encryption_result = self._invoke(self.encryption_function, image)
+        finally:
+            _IMAGE_HASH_HOOK.reset(token)    
         encryption_seconds = time.perf_counter() - started
         encrypted_value, decryption_context = self._unpack_encryption_result(encryption_result)
         encrypted = _to_uint8_pixels(_load_image_array(encrypted_value))
@@ -610,6 +620,7 @@ class Analysis:
             decrypted=decrypted,
             encryption_seconds=encryption_seconds,
             decryption_seconds=decryption_seconds,
+            image_hash_bits=captured["image_hash_bits"],
         )
 
     def _runs(self) -> list[_PipelineRun]:
@@ -1305,14 +1316,14 @@ if __name__ == "__main__":
                         r"C:\ImageEncryption\images\img6.png",
                         r"C:\ImageEncryption\images\img7.png",
                         ])
-    result = analysis.encryption_decryption_test(show=True)
+    # result = analysis.encryption_decryption_test(show=True)
     #卡方检验 global_parallel_size居然会影响卡方检验的结果，取64不错
-    analysis.chi_square_test()
+    # analysis.chi_square_test()
     #直方图
     # analysis.histogram_test(plot=True, show=True)
     #相关性分析
-    analysis.test_correlation(plot=False, show=True)
+    # analysis.test_correlation(plot=False, show=True)
     #信息熵
-    analysis.entropy_test()
+    # analysis.entropy_test()
     #差分攻击
-    analysis.differential_attack_test()
+    analysis.test_differential_attack()
