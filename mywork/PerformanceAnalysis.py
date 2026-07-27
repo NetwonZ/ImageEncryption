@@ -635,7 +635,22 @@ class Analysis:
         )
 
     def _runs(self) -> list[_PipelineRun]:
-        return [self._run_pipeline(path) for path in self.image_paths]
+        controller = self._encryption_owner()
+        reset_cml = (
+            controller is not None
+            and callable(getattr(controller, "set_cml", None))
+            and callable(getattr(controller, "resume_cml", None))
+        )
+        runs: list[_PipelineRun] = []
+        for path in self.image_paths:
+            if reset_cml:
+                controller.set_cml(image=path)
+            try:
+                runs.append(self._run_pipeline(path))
+            finally:
+                if reset_cml:
+                    controller.resume_cml()
+        return runs
 
     @staticmethod
     def _fidelity(original: np.ndarray, decrypted: np.ndarray) -> dict[str, float | bool | None]:
@@ -1336,14 +1351,31 @@ class Analysis:
 
     def test_differential_attack(self, *, print_result: bool = True) -> list[dict[str, Any]]:
         """Measure NPCR/UACI after changing one plaintext pixel by one bit."""
+        controller = self._encryption_owner()
+        reset_cml = (
+            controller is not None
+            and callable(getattr(controller, "set_cml", None))
+            and callable(getattr(controller, "resume_cml", None))
+        )
+
+        def run_with_plaintext_cml(image: ImageInput, *, label_path: Path) -> _PipelineRun:
+            """Rebuild image-dependent CML before each differential trial."""
+            if reset_cml:
+                controller.set_cml(image=image)
+            try:
+                return self._run_pipeline(image, label_path=label_path)
+            finally:
+                if reset_cml:
+                    controller.resume_cml()
+
         results = []
         for path in self.image_paths:
             original = _to_uint8_pixels(_load_image_array(path))
             modified = original.copy()
             modified.reshape(-1)[0] ^= np.uint8(1)
 
-            baseline_run = self._run_pipeline(original, label_path=path)
-            modified_run = self._run_pipeline(modified, label_path=path)
+            baseline_run = run_with_plaintext_cml(original, label_path=path)
+            modified_run = run_with_plaintext_cml(modified, label_path=path)
             if baseline_run.encrypted.shape != modified_run.encrypted.shape:
                 raise ValueError("ciphertext shape changed after a one-bit plaintext modification")
 
@@ -1393,6 +1425,365 @@ class Analysis:
                 ],
             )
         return results
+
+    def test_decryption_key_sensitivity(
+        self,
+        *,
+        parameter: str = "mu",
+        delta: float = 1e-14,
+        figsize: tuple[float, float] | None = None,
+        save_path: str | Path | None = None,
+        dpi: int = 150,
+        show: bool = True,
+        print_result: bool = True,
+    ) -> dict[str, Any]:
+        """Plot correct- and wrong-CML-key decryption for every configured image."""
+        if parameter not in {"mu", "v", "alpha", "beta"}:
+            raise ValueError("parameter must be one of: 'mu', 'v', 'alpha', 'beta'")
+        delta = float(delta)
+        if not np.isfinite(delta) or delta == 0.0:
+            raise ValueError("delta must be a finite, non-zero number")
+        if not isinstance(dpi, int) or dpi <= 0:
+            raise ValueError("dpi must be a positive integer")
+
+        encrypter = self._encryption_owner()
+        if encrypter is None or not callable(getattr(encrypter, "set_cml", None)):
+            raise TypeError(
+                "test_decryption_key_sensitivity requires a bound Encrypter.encrypt "
+                "function whose owner implements set_cml()"
+            )
+        if not callable(getattr(encrypter, "resume_cml", None)):
+            raise TypeError("the encryption-function owner must implement resume_cml()")
+
+        decrypter = getattr(self.decryption_function, "__self__", None)
+        if decrypter is None and hasattr(self.decryption_function, "func"):
+            decrypter = getattr(self.decryption_function.func, "__self__", None)
+        decrypt_v2 = getattr(decrypter, "Decrypt_V2", None)
+        if not callable(decrypt_v2):
+            raise TypeError(
+                "test_decryption_key_sensitivity requires a bound DeEncrypter method "
+                "whose owner implements Decrypt_V2()"
+            )
+
+        rows: list[dict[str, Any]] = []
+        for path in self.image_paths:
+            original = _to_uint8_pixels(_load_image_array(path))
+            try:
+                default_parameters = encrypter.set_cml(image=path)
+                default_value = float(default_parameters[parameter])
+                perturbed_value = default_value + delta
+                if perturbed_value == default_value:
+                    raise ValueError(
+                        f"delta={delta!r} is too small to change {parameter} "
+                        f"at its current floating-point magnitude"
+                    )
+
+                encryption_result = self._invoke(self.encryption_function, path)
+                encrypted_value, decryption_context = self._unpack_encryption_result(encryption_result)
+                if len(decryption_context) != 1:
+                    raise ValueError("encryption result must provide one EncryptionMetadata object")
+                metadata = decryption_context[0]
+                encrypted = _to_uint8_pixels(_load_image_array(encrypted_value))
+
+                correct_result = self._invoke(decrypt_v2, encrypted_value, encrypter, metadata)
+                correct = _to_uint8_pixels(_load_image_array(self._unpack_decryption_result(correct_result)))
+
+                encrypter.set_cml(**{parameter: perturbed_value})
+                wrong_result = self._invoke(decrypt_v2, encrypted_value, encrypter, metadata)
+                wrong = _to_uint8_pixels(_load_image_array(self._unpack_decryption_result(wrong_result)))
+            finally:
+                encrypter.resume_cml()
+
+            if not (original.shape == encrypted.shape == correct.shape == wrong.shape):
+                raise ValueError("original, encrypted, and decrypted images must have identical shapes")
+            wrong_difference = original.astype(np.int16) - wrong.astype(np.int16)
+            rows.append(
+                {
+                    "image": str(path),
+                    "original": original,
+                    "encrypted": encrypted,
+                    "correct_decryption": correct,
+                    "wrong_decryption": wrong,
+                    "default_value": default_value,
+                    "perturbed_value": perturbed_value,
+                    "correct_exact_recovery": bool(np.array_equal(original, correct)),
+                    "wrong_exact_recovery": bool(np.array_equal(original, wrong)),
+                    "wrong_key_npcr_percent": float(np.mean(original != wrong) * 100.0),
+                    "wrong_key_uaci_percent": float(np.mean(np.abs(wrong_difference)) / 255.0 * 100.0),
+                }
+            )
+
+        figure, axes = plt.subplots(
+            len(rows),
+            4,
+            figsize=figsize or (16.0, 3.8 * len(rows)),
+            squeeze=False,
+            constrained_layout=True,
+        )
+        column_titles = (
+            "Original",
+            "Encrypted",
+            "Correct-key decryption",
+            f"Wrong-key decryption\n{parameter} + {delta:.2e}",
+        )
+        for row_index, row in enumerate(rows):
+            for column_index, image in enumerate(
+                (row["original"], row["encrypted"], row["correct_decryption"], row["wrong_decryption"])
+            ):
+                axis = axes[row_index, column_index]
+                if image.ndim == 2:
+                    axis.imshow(image, cmap="gray", vmin=0, vmax=255)
+                else:
+                    axis.imshow(image)
+                if row_index == 0:
+                    axis.set_title(column_titles[column_index], fontsize=13, fontweight="bold")
+                axis.axis("off")
+            axes[row_index, 0].text(
+                -0.04,
+                0.5,
+                Path(row["image"]).name,
+                transform=axes[row_index, 0].transAxes,
+                rotation=90,
+                ha="right",
+                va="center",
+                fontsize=10,
+            )
+
+        saved_path: Path | None = None
+        if save_path is not None:
+            saved_path = Path(save_path).expanduser().resolve()
+            saved_path.parent.mkdir(parents=True, exist_ok=True)
+            figure.savefig(saved_path, dpi=dpi, bbox_inches="tight", facecolor="white")
+
+        if print_result:
+            self._print_heading(f"Decryption key sensitivity ({parameter} + {delta:.2e})")
+            _print_ascii_table(
+                (
+                    "Image",
+                    "Correct Key Exact",
+                    "Wrong Key Exact",
+                    "Wrong Key NPCR (%)",
+                    "Wrong Key UACI (%)",
+                    "Saved Figure",
+                ),
+                [
+                    (
+                        Path(row["image"]).name,
+                        self._yes_no(row["correct_exact_recovery"]),
+                        self._yes_no(row["wrong_exact_recovery"]),
+                        self._format_number(row["wrong_key_npcr_percent"]),
+                        self._format_number(row["wrong_key_uaci_percent"]),
+                        str(saved_path) if saved_path is not None and index == 0 else "-",
+                    )
+                    for index, row in enumerate(rows)
+                ],
+            )
+        if show:
+            plt.show()
+        return {
+            "figure": figure,
+            "axes": axes,
+            "rows": rows,
+            "save_path": str(saved_path) if saved_path is not None else None,
+        }
+
+    def test_decryption_robustness(
+        self,
+        *,
+        mask_ratio: float,
+        mask_value: int = 0,
+        salt_ratio: float = 0.01,
+        gaussian_std: float = 20.0,
+        seed: int | None = 2026,
+        figsize: tuple[float, float] | None = None,
+        save_path: str | Path | None = None,
+        dpi: int = 150,
+        show: bool = True,
+        print_result: bool = True,
+    ) -> dict[str, Any]:
+        """Decrypt ciphertext after masking, salt-noise, and Gaussian-noise attacks."""
+        mask_ratio = float(mask_ratio)
+        if not np.isfinite(mask_ratio) or not 0.0 <= mask_ratio <= 1.0:
+            raise ValueError("mask_ratio must be in [0, 1]")
+        if not isinstance(mask_value, int) or not 0 <= mask_value <= 255:
+            raise ValueError("mask_value must be an integer in [0, 255]")
+        salt_ratio = float(salt_ratio)
+        gaussian_std = float(gaussian_std)
+        if not np.isfinite(salt_ratio) or not 0.0 <= salt_ratio <= 1.0:
+            raise ValueError("salt_ratio must be in [0, 1]")
+        if not np.isfinite(gaussian_std) or gaussian_std < 0.0:
+            raise ValueError("gaussian_std must be finite and non-negative")
+        if not isinstance(dpi, int) or dpi <= 0:
+            raise ValueError("dpi must be a positive integer")
+
+        controller = self._encryption_owner()
+        reset_cml = (
+            controller is not None
+            and callable(getattr(controller, "set_cml", None))
+            and callable(getattr(controller, "resume_cml", None))
+        )
+        rng = np.random.default_rng(seed)
+
+        def apply_mask(ciphertext: np.ndarray) -> np.ndarray:
+            """Mask top-left, bottom-right, and center squares in a ciphertext."""
+            attacked = ciphertext.copy()
+            height, width = attacked.shape[:2]
+            # Three equal squares share the requested total masked-pixel ratio.
+            # Floor the non-integer side length as required.
+            block_side = int(np.floor(np.sqrt(mask_ratio * height * width / 3.0)))
+            block_side = min(block_side, height, width)
+            block_height = block_width = block_side
+            locations = (
+                (0, 0),
+                (height - block_height, width - block_width),
+                ((height - block_height) // 2, (width - block_width) // 2),
+            )
+            for row, col in locations:
+                attacked[row:row + block_height, col:col + block_width] = mask_value
+            return attacked
+
+        def apply_salt_noise(ciphertext: np.ndarray) -> np.ndarray:
+            """Set a random salt_ratio fraction of ciphertext pixels to 255."""
+            attacked = ciphertext.copy()
+            pixel_count = attacked.shape[0] * attacked.shape[1]
+            salt_count = int(round(pixel_count * salt_ratio))
+            if salt_count == 0:
+                return attacked
+            positions = rng.choice(pixel_count, size=salt_count, replace=False)
+            rows, cols = np.unravel_index(positions, attacked.shape[:2])
+            attacked[rows, cols] = 255
+            return attacked
+
+        def apply_gaussian_noise(ciphertext: np.ndarray) -> np.ndarray:
+            noise = rng.normal(0.0, gaussian_std, size=ciphertext.shape)
+            return np.clip(np.rint(ciphertext.astype(np.float64) + noise), 0, 255).astype(np.uint8)
+
+        def decrypt_attacked(ciphertext: np.ndarray, context: tuple[Any, ...]) -> np.ndarray:
+            result = self._invoke(self.decryption_function, ciphertext, *context)
+            return _to_uint8_pixels(_load_image_array(self._unpack_decryption_result(result)))
+
+        rows: list[dict[str, Any]] = []
+        for path in self.image_paths:
+            if reset_cml:
+                controller.set_cml(image=path)
+            try:
+                original = _to_uint8_pixels(_load_image_array(path))
+                encryption_result = self._invoke(self.encryption_function, path)
+                encrypted_value, context = self._unpack_encryption_result(encryption_result)
+                encrypted = _to_uint8_pixels(_load_image_array(encrypted_value))
+                if original.ndim == 2 and encrypted.ndim == 3:
+                    original = np.repeat(original[:, :, np.newaxis], encrypted.shape[2], axis=2)
+                if original.shape != encrypted.shape:
+                    raise ValueError("original and encrypted images must have identical shapes")
+
+                attacked_ciphers = {
+                    "mask": apply_mask(encrypted),
+                    "salt": apply_salt_noise(encrypted),
+                    "gaussian": apply_gaussian_noise(encrypted),
+                    "mask_salt": apply_mask(apply_salt_noise(encrypted)),
+                }
+                decrypted_attacks = {
+                    name: decrypt_attacked(ciphertext, context)
+                    for name, ciphertext in attacked_ciphers.items()
+                }
+            finally:
+                if reset_cml:
+                    controller.resume_cml()
+
+            if any(image.shape != original.shape for image in decrypted_attacks.values()):
+                raise ValueError("attacked ciphertext decryption changed image dimensions")
+            rows.append(
+                {
+                    "image": str(path),
+                    "original": original,
+                    "encrypted": encrypted,
+                    "mask_side": int(np.floor(np.sqrt(mask_ratio * encrypted.shape[0] * encrypted.shape[1] / 3.0))),
+                    "attacked_ciphertexts": attacked_ciphers,
+                    "decrypted_attacks": decrypted_attacks,
+                    "fidelity": {
+                        name: self._fidelity(original, image)
+                        for name, image in decrypted_attacks.items()
+                    },
+                }
+            )
+
+        figure, axes = plt.subplots(
+            len(rows),
+            7,
+            figsize=figsize or (28.0, 3.8 * len(rows)),
+            squeeze=False,
+            constrained_layout=True,
+        )
+        attack_order = ("mask", "salt", "gaussian", "mask_salt")
+        column_titles = (
+            "Original",
+            "Encrypted",
+            "Masked ciphertext",
+            "Masked-cipher decryption",
+            "Salt-noise-cipher decryption",
+            "Gaussian-noise-cipher decryption",
+            "Masked + salt-noise-cipher decryption",
+        )
+        for row_index, row in enumerate(rows):
+            images = (
+                row["original"],
+                row["encrypted"],
+                row["attacked_ciphertexts"]["mask"],
+                *(row["decrypted_attacks"][name] for name in attack_order),
+            )
+            for column_index, image in enumerate(images):
+                axis = axes[row_index, column_index]
+                if image.ndim == 2:
+                    axis.imshow(image, cmap="gray", vmin=0, vmax=255)
+                else:
+                    axis.imshow(image)
+                if row_index == 0:
+                    axis.set_title(column_titles[column_index], fontsize=12, fontweight="bold")
+                axis.axis("off")
+            axes[row_index, 0].text(
+                -0.04,
+                0.5,
+                Path(row["image"]).name,
+                transform=axes[row_index, 0].transAxes,
+                rotation=90,
+                ha="right",
+                va="center",
+                fontsize=10,
+            )
+
+        saved_path: Path | None = None
+        if save_path is not None:
+            saved_path = Path(save_path).expanduser().resolve()
+            saved_path.parent.mkdir(parents=True, exist_ok=True)
+            figure.savefig(saved_path, dpi=dpi, bbox_inches="tight", facecolor="white")
+
+        if print_result:
+            self._print_heading("Decryption robustness under ciphertext attacks")
+            _print_ascii_table(
+                ("Image", "Attack", "Exact Recovery", "MSE", "PSNR (dB)", "Saved Figure"),
+                [
+                    (
+                        Path(row["image"]).name,
+                        attack_name,
+                        self._yes_no(row["fidelity"][attack_name]["exact_recovery"]),
+                        self._format_number(row["fidelity"][attack_name]["mse"]),
+                        self._format_number(row["fidelity"][attack_name]["psnr_db"]),
+                        str(saved_path)
+                        if saved_path is not None and row_index == 0 and attack_index == 0
+                        else "-",
+                    )
+                    for row_index, row in enumerate(rows)
+                    for attack_index, attack_name in enumerate(attack_order)
+                ],
+            )
+        if show:
+            plt.show()
+        return {
+            "figure": figure,
+            "axes": axes,
+            "rows": rows,
+            "save_path": str(saved_path) if saved_path is not None else None,
+        }
 
     def _resolve_classic_attack_selector(self, selector: int | str | Path) -> Path:
         if isinstance(selector, int):
@@ -1688,6 +2079,8 @@ class Analysis:
     chi_square_test = test_chi_square
     correlation_test = test_correlation
     key_sensitivity_test = test_key_sensitivity
+    decryption_key_sensitivity_test = test_decryption_key_sensitivity
+    decryption_robustness_test = test_decryption_robustness
     differential_attack_test = test_differential_attack
     classic_attack_test = test_classic_attack
 
@@ -1712,7 +2105,7 @@ if __name__ == "__main__":
     config = EncryptionConfig(
     seed=2026,
     b_max=64,
-    b_min=12,
+    b_min=4,
     block_operation="xor",
     global_parallel_size=64,)
     MyEncrypter = Encrypter(config)
@@ -1720,15 +2113,15 @@ if __name__ == "__main__":
     
     analysis = Analysis(MyEncrypter.encrypt, MyDeEncrypter.decrypt,
                         [
-                        # r"C:\ImageEncryption\images\img1.png",
-                        # r"C:\ImageEncryption\images\img2.png",
+                        r"C:\ImageEncryption\images\img1.png",
+                        r"C:\ImageEncryption\images\img2.png",
                         # r"C:\ImageEncryption\images\img3.png",
                         # r"C:\ImageEncryption\images\img4.png",
                         # r"C:\ImageEncryption\images\img5.png",
                         # r"C:\ImageEncryption\images\img6.png",
                         r"C:\ImageEncryption\images\img7.png",
                         ])
-    # result = analysis.encryption_decryption_test(show=True)
+    result = analysis.encryption_decryption_test(show=True)
     #卡方检验 global_parallel_size居然会影响卡方检验的结果，取64不错
     # analysis.chi_square_test()
     #直方图
@@ -1740,7 +2133,9 @@ if __name__ == "__main__":
     #差分攻击
     # analysis.test_differential_attack()
     #秘钥敏感性分析
-    results = analysis.test_key_sensitivity(delta=1e-14)
+    # results = analysis.test_key_sensitivity(delta=1e-14)
+    #解密秘钥敏感性分析
+    # results = analysis.test_decryption_key_sensitivity(parameter="mu", delta=1e-14, show=True, save_path="mywork/outputs/decryption_key_sensitivity.png")
     #经典攻击
     # result = analysis.classic_attack_test(
     #     groups=[
@@ -1749,5 +2144,15 @@ if __name__ == "__main__":
     #     ],
     #     show=True,
     #     save_path="mywork/outputs/classic_attack.png",
+    # )
+    #鲁棒性分析
+    # result = analysis.test_decryption_robustness(
+    # mask_ratio=0.15,    # total nominal coverage across three mask squares
+    # mask_value=0,
+    # salt_ratio=0.01,
+    # gaussian_std=0.01,
+    # seed=2026,
+    # show=True,
+    # save_path="output/decryption_robustness.png",
     # )
         
