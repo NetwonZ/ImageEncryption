@@ -968,8 +968,6 @@ class Encrypter:
             print(profile.format())
 
         #每次加密后，都将self._cml 置为None，确保下一次加密时重新初始化CML
-        self._cml = None
-        
         return EncryptionResult(encrypted_image=encrypted_image, metadata=metadata, profile=profile)
 
 
@@ -1203,6 +1201,43 @@ class DeEncrypter:
         if print_profile:
             print(profile.format())
         return DecryptionResult(decrypted_image=decrypted_image, profile=profile)
+
+    def Decrypt_V2(
+        self,
+        encrypted_image: str | Path | np.ndarray | pil_image.Image,
+        encrypter: Encrypter,
+        metadata: EncryptionMetadata,
+        *,
+        print_profile: bool = True,
+    ) -> DecryptionResult:
+        """Decrypt by regenerating key material from a prepared Encrypter CML.
+
+        ``metadata`` supplies public image shape, adaptive block layout, and
+        encryption configuration. Its original ``key_material`` is ignored.
+        """
+        if not isinstance(encrypter, Encrypter):
+            raise TypeError("encrypter must be an Encrypter instance")
+        if encrypter._cml is None:
+            raise ValueError("encrypter._cml is unavailable; initialize it with the encryption CML state")
+        if metadata.version != "encryption-v2":
+            raise ValueError(f"unsupported encryption metadata version: {metadata.version}")
+        if self.config is not None and self.config != metadata.config:
+            raise ValueError("DeEncrypter config does not match the encryption metadata")
+
+        cipher_array = self.load_image(encrypted_image)
+        if tuple(cipher_array.shape) != metadata.image_shape:
+            raise ValueError("ciphertext dimensions do not match encryption metadata")
+
+        # generate_rdseq_fast() restarts from cml.x0, reconstructing encryption
+        # key material without reading metadata.key_material.
+        regenerated_key_material = encrypter.generate_key_material(
+            encrypter._cml,
+            metadata.blocks,
+            *cipher_array.shape[:2],
+            print_profile=print_profile,
+        )
+        regenerated_metadata = replace(metadata, key_material=regenerated_key_material)
+        return self.decrypt(cipher_array, regenerated_metadata, print_profile=print_profile)
 
     @staticmethod
     def _validate_key_material(
