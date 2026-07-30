@@ -748,6 +748,68 @@ class Analysis:
             )
         return results
 
+    def test_psnr(self, *, print_result: bool = True) -> list[dict[str, Any]]:
+        """Measure PSNR between each plaintext image and its ciphertext.
+
+        This is intentionally different from :meth:`test_reversibility`, whose
+        PSNR describes plaintext versus decrypted output.  A secure image
+        cipher is expected to have a low plaintext/ciphertext PSNR, while the
+        decryption PSNR should be infinite for exact recovery.
+        """
+        results: list[dict[str, Any]] = []
+        for run in self._runs():
+            if run.original.shape != run.encrypted.shape:
+                results.append(
+                    {
+                        "image": str(run.image_path),
+                        "original_shape": tuple(int(value) for value in run.original.shape),
+                        "cipher_shape": tuple(int(value) for value in run.encrypted.shape),
+                        "shape_matches": False,
+                        "mse": None,
+                        "psnr_db": None,
+                    }
+                )
+                continue
+
+            difference = run.original.astype(np.float64) - run.encrypted.astype(np.float64)
+            mse = float(np.mean(difference**2))
+            psnr = float("inf") if mse == 0.0 else float(10.0 * np.log10((255.0**2) / mse))
+            results.append(
+                {
+                    "image": str(run.image_path),
+                    "original_shape": tuple(int(value) for value in run.original.shape),
+                    "cipher_shape": tuple(int(value) for value in run.encrypted.shape),
+                    "shape_matches": True,
+                    "mse": mse,
+                    "psnr_db": psnr,
+                }
+            )
+
+        if print_result:
+            self._print_heading("Plaintext/ciphertext PSNR")
+            _print_ascii_table(
+                (
+                    "Image",
+                    "Original Shape",
+                    "Cipher Shape",
+                    "Shape Match",
+                    "MSE",
+                    "PSNR (dB)",
+                ),
+                [
+                    (
+                        Path(result["image"]).name,
+                        str(result["original_shape"]),
+                        str(result["cipher_shape"]),
+                        self._yes_no(result["shape_matches"]),
+                        self._format_number(result["mse"]),
+                        self._format_number(result["psnr_db"]),
+                    )
+                    for result in results
+                ],
+            )
+        return results
+
     def test_encryption_decryption(
         self,
         *,
@@ -2029,6 +2091,7 @@ class Analysis:
         include_classic_attack: bool = False,
         classic_attack_groups: list[tuple[int | str | Path, int | str | Path]] | None = None,
         show_classic_attack: bool = False,
+        include_psnr: bool = True,
         include_image_comparison: bool = True,
         show_image_comparison: bool = False,
         print_result: bool = True,
@@ -2063,6 +2126,8 @@ class Analysis:
                 show=show_classic_attack,
                 print_result=print_result,
             )
+        if include_psnr:
+            results["psnr"] = self.test_psnr(print_result=print_result)
         if include_image_comparison:
             results["image_comparison"] = self.test_encryption_decryption(
                 show=show_image_comparison,
@@ -2072,6 +2137,7 @@ class Analysis:
 
     # Natural aliases for code written with the old ``*_test`` naming style.
     reversibility_test = test_reversibility
+    psnr_test = test_psnr
     encryption_decryption_test = test_encryption_decryption
     speed_test = test_speed
     histogram_test = test_histogram
@@ -2146,13 +2212,14 @@ if __name__ == "__main__":
     #     save_path="mywork/outputs/classic_attack.png",
     # )
     #鲁棒性分析
-    # result = analysis.test_decryption_robustness(
-    # mask_ratio=0.15,    # total nominal coverage across three mask squares
-    # mask_value=0,
-    # salt_ratio=0.01,
-    # gaussian_std=0.01,
-    # seed=2026,
-    # show=True,
-    # save_path="output/decryption_robustness.png",
-    # )
-        
+    result = analysis.test_decryption_robustness(
+    mask_ratio=0.15,    # total nominal coverage across three mask squares
+    mask_value=0,
+    salt_ratio=0.01,
+    gaussian_std=0.01,
+    seed=2026,
+    show=True,
+    save_path="output/decryption_robustness.png",
+    )
+    #明文vs密文 PSNR
+    # analysis.psnr_test()
