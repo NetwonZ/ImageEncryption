@@ -107,6 +107,19 @@ class BlockAxisPermutationIndices:
 
 
 @dataclass(frozen=True)
+class GlobalBitPermutationKey:
+    """Permutation keys D, H, and W for the complete 12-plane DNA tensor.
+
+    ``plane_permutation`` reorders the 12 DNA planes.  Each resulting plane
+    then uses its own row and column permutations.
+    """
+
+    plane_permutation: np.ndarray
+    row_permutations: np.ndarray
+    col_permutations: np.ndarray
+
+
+@dataclass(frozen=True)
 class EncryptionKeyMaterial:
     """All key and state material required by both encryption and decryption."""
 
@@ -114,6 +127,7 @@ class EncryptionKeyMaterial:
     shuffled_block_rule_ids: np.ndarray
     intra_block_permutations: tuple[BlockAxisPermutationIndices, ...]
     block_shuffle_keys: tuple[BlockShuffleKey, ...]
+    global_bit_permutation_key: GlobalBitPermutationKey
     block_key_matrices: tuple[np.ndarray, ...]
     block_operation_rule_ids: np.ndarray
     global_permutation: np.ndarray
@@ -337,6 +351,29 @@ def _sequence_pair_to_dna_values(
     return pair_values
 
 
+def _validate_global_bit_permutation_key(
+    key: GlobalBitPermutationKey,
+    height: int,
+    width: int,
+) -> None:
+    """Validate the D/H/W key shapes and every contained permutation."""
+    if not isinstance(key, GlobalBitPermutationKey):
+        raise ValueError("global bit-permutation metadata is invalid")
+
+    specifications = (
+        ("plane", np.asarray(key.plane_permutation), (DNA_PLANE_COUNT,), DNA_PLANE_COUNT),
+        ("row", np.asarray(key.row_permutations), (DNA_PLANE_COUNT, height), height),
+        ("column", np.asarray(key.col_permutations), (DNA_PLANE_COUNT, width), width),
+    )
+    for name, values, expected_shape, permutation_size in specifications:
+        if values.shape != expected_shape or not np.issubdtype(values.dtype, np.integer):
+            raise ValueError(f"global bit-permutation {name} metadata is invalid")
+        sorted_values = np.sort(values, axis=-1)
+        expected = np.broadcast_to(np.arange(permutation_size), expected_shape)
+        if not np.array_equal(sorted_values, expected):
+            raise ValueError(f"global bit-permutation {name} indices are not permutations")
+
+
 def _apply_inverse_dna_operation(cipher: np.ndarray, key: np.ndarray, operation: str) -> np.ndarray:
     operation = operation.lower().strip()
     if operation == "xor":
@@ -490,18 +527,31 @@ class Encrypter:
         B = len(blocks)
         N_OperationRule = B
         N_InnerPermutation = sum(DNA_PLANE_COUNT + block.height + block.width for block in blocks)
+        N_GlobalBitPermutation = DNA_PLANE_COUNT * (1 + height + width)
         N_GlobalPermutation = height * width
         N_GlobalKeyRule = height * width
         if not isinstance(cml, SalomoncouplingCML) or cml.L != height * width:
             raise ValueError("CML must be initialized and match the image dimensions")
-        Matrix = cml.generate_rdseq_fast(7)  # shape: (7, L) array
+        required_values = (
+            B
+            + N_InnerPermutation
+            + N_GlobalBitPermutation
+            + N_OperationRule
+            + N_GlobalPermutation
+            + N_GlobalKeyRule
+        )
+        pixel_count = height * width
+        sequence_row_count = max(3, (required_values + pixel_count - 1) // pixel_count)
+        Matrix = cml.generate_rdseq_fast(4 + sequence_row_count)
         recorder.record("CML random matrix generation", started)
 
         started = time.perf_counter()
-        required_values = 2 * B + N_InnerPermutation + N_OperationRule + N_GlobalPermutation + N_GlobalKeyRule
-        # CHAOTIC SEQUENCES: use Matrix's final three rows in order.
-        # No extra CML iteration is used for key-material expansion.
-        Seq = np.concatenate((Matrix[-1, :], Matrix[-2, :], Matrix[-3, :]))
+        # CHAOTIC SEQUENCES: consume Matrix's final rows from last to first.
+        # Three rows remain the normal case; tiny images receive extra rows only
+        # when D/H/W and the other allocations cannot fit in 3 * H * W values.
+        Seq = np.concatenate(
+            tuple(Matrix[-row_offset, :] for row_offset in range(1, sequence_row_count + 1))
+        )
         if required_values > Seq.size:
             raise ValueError(
                 f"Seq length {Seq.size} is insufficient for all key allocations; "
@@ -530,19 +580,27 @@ class Encrypter:
         recorder.record("Block encoding rules and axis permutations", started)
 
         started = time.perf_counter()
-        shuffle_values = Seq[cursor:cursor + B]
-        cursor += B
-        grouped_indices: dict[tuple[int, int], list[int]] = {}
-        for index, block in enumerate(blocks):
-            grouped_indices.setdefault((block.height, block.width), []).append(index)
-        block_shuffle_keys: list[BlockShuffleKey] = []
+        # CHAOTIC SEQUENCES: D contains 12 plane ranks. H and W contain one
+        # independent row/column rank sequence for every target DNA plane.
+        plane_values = Seq[cursor:cursor + DNA_PLANE_COUNT]
+        cursor += DNA_PLANE_COUNT
+        row_value_count = DNA_PLANE_COUNT * height
+        row_values = Seq[cursor:cursor + row_value_count].reshape(DNA_PLANE_COUNT, height)
+        cursor += row_value_count
+        col_value_count = DNA_PLANE_COUNT * width
+        col_values = Seq[cursor:cursor + col_value_count].reshape(DNA_PLANE_COUNT, width)
+        cursor += col_value_count
+        global_bit_permutation_key = GlobalBitPermutationKey(
+            plane_permutation=np.argsort(plane_values, kind="stable").astype(np.intp),
+            row_permutations=np.argsort(row_values, axis=1, kind="stable").astype(np.intp),
+            col_permutations=np.argsort(col_values, axis=1, kind="stable").astype(np.intp),
+        )
+
+        # The former same-size block shuffle is no longer part of the pipeline.
+        # The ciphertext boundary therefore keeps the original block rule map.
         shuffled_rule_ids = EncodeRule.copy()
-        for shape, index_list in grouped_indices.items():
-            targets = np.asarray(index_list, dtype=np.intp)
-            sources = targets[np.argsort(shuffle_values[targets], kind="stable")]
-            shuffled_rule_ids[targets] = EncodeRule[sources]
-            block_shuffle_keys.append(BlockShuffleKey(shape, targets, sources))
-        recorder.record("Same-size block shuffle keys", started)
+        block_shuffle_keys: tuple[BlockShuffleKey, ...] = ()
+        recorder.record("Global bit-permutation keys", started)
 
         started = time.perf_counter()
         operation_rule_values = Seq[cursor:cursor + N_OperationRule]
@@ -569,7 +627,6 @@ class Encrypter:
         recorder.record("Global permutation and DNA rules", started)
 
         started = time.perf_counter()
-        pixel_count = height * width
         if Matrix.ndim != 2 or Matrix.shape[0] < 4 or Matrix.shape[1] < pixel_count:
             raise ValueError(
                 f"Matrix must have shape (at least 4, at least {pixel_count}), got {Matrix.shape}"
@@ -622,7 +679,8 @@ class Encrypter:
             original_block_rule_ids=EncodeRule,
             shuffled_block_rule_ids=shuffled_rule_ids,
             intra_block_permutations=tuple(intra_permutations),
-            block_shuffle_keys=tuple(block_shuffle_keys),
+            block_shuffle_keys=block_shuffle_keys,
+            global_bit_permutation_key=global_bit_permutation_key,
             block_key_matrices=block_key_matrices,
             block_operation_rule_ids=block_operation_rule_ids,
             global_permutation=global_permutation,
@@ -662,17 +720,22 @@ class Encrypter:
                 )
             )
 
-        grouped_indices: dict[tuple[int, int], list[int]] = {}
-        for index, block in enumerate(blocks):
-            grouped_indices.setdefault((block.height, block.width), []).append(index)
-        shuffle_keys: list[BlockShuffleKey] = []
+        # PSEUDORANDOM SEQUENCES: D has 12 plane ranks; H and W have one
+        # independent spatial-axis rank sequence for each target DNA plane.
+        global_bit_permutation_key = GlobalBitPermutationKey(
+            plane_permutation=np.argsort(rng.random(DNA_PLANE_COUNT), kind="stable").astype(np.intp),
+            row_permutations=np.argsort(
+                rng.random((DNA_PLANE_COUNT, height)), axis=1, kind="stable"
+            ).astype(np.intp),
+            col_permutations=np.argsort(
+                rng.random((DNA_PLANE_COUNT, width)), axis=1, kind="stable"
+            ).astype(np.intp),
+        )
+
+        # Same-size block shuffling has been superseded by the global bit
+        # permutation, so no legacy block-shuffle keys are generated.
+        shuffle_keys: tuple[BlockShuffleKey, ...] = ()
         shuffled_rule_ids = original_rule_ids.copy()
-        for shape, index_list in grouped_indices.items():
-            targets = np.asarray(index_list, dtype=np.intp)
-            # PSEUDORANDOM SEQUENCE: source block order for each same-sized group.
-            sources = rng.permutation(targets).astype(np.intp)
-            shuffled_rule_ids[targets] = original_rule_ids[sources]
-            shuffle_keys.append(BlockShuffleKey(shape, targets, sources))
 
         # PSEUDORANDOM SEQUENCE: one local DNA operation rule per shuffled block.
         block_operation_rule_ids = rng.integers(1, 4, size=len(blocks), dtype=np.uint8)
@@ -705,7 +768,8 @@ class Encrypter:
             original_block_rule_ids=original_rule_ids,
             shuffled_block_rule_ids=shuffled_rule_ids,
             intra_block_permutations=tuple(intra_permutations),
-            block_shuffle_keys=tuple(shuffle_keys),
+            block_shuffle_keys=shuffle_keys,
+            global_bit_permutation_key=global_bit_permutation_key,
             block_key_matrices=tuple(block_key_matrices),
             block_operation_rule_ids=block_operation_rule_ids,
             global_permutation=global_permutation,
@@ -820,6 +884,29 @@ class Encrypter:
                 output[:, target.row_slice, target.col_slice] = source_dna[:, source.row_slice, source.col_slice]
         return output
 
+    @staticmethod
+    def global_bit_permutation(
+        dna_matrix: np.ndarray,
+        key_material: EncryptionKeyMaterial,
+    ) -> np.ndarray:
+        """Globally permute the 12 DNA planes and every plane's rows/columns.
+
+        For target plane ``i``, the output is selected from source plane
+        ``D[i]`` and then indexed by the independent row key ``H[i]`` and
+        column key ``W[i]``.
+        """
+        source_dna = np.asarray(dna_matrix, dtype=np.uint8)
+        if source_dna.ndim != 3 or source_dna.shape[0] != DNA_PLANE_COUNT:
+            raise ValueError(f"dna_matrix must have shape ({DNA_PLANE_COUNT}, H, W)")
+        _, height, width = source_dna.shape
+        key = key_material.global_bit_permutation_key
+        _validate_global_bit_permutation_key(key, height, width)
+        return source_dna[
+            key.plane_permutation[:, np.newaxis, np.newaxis],
+            key.row_permutations[:, :, np.newaxis],
+            key.col_permutations[:, np.newaxis, :],
+        ]
+
     def apply_block_diffusion(
         self,
         dna_matrix: np.ndarray,
@@ -928,12 +1015,12 @@ class Encrypter:
         recorder.record("DNA intra-block permutation", started)
 
         started = time.perf_counter()
-        shuffled_dna = self.shuffle_same_size_blocks(permuted_dna, blocks, key_material.block_shuffle_keys)
-        recorder.record("Same-size block shuffle", started)
-        # ttt
+        globally_permuted_dna = self.global_bit_permutation(permuted_dna, key_material)
+        recorder.record("Global bit permutation", started)
+
         started = time.perf_counter()
         locally_diffused_dna = self.apply_block_diffusion(
-            shuffled_dna,
+            globally_permuted_dna,
             blocks,
             key_material.block_key_matrices,
             key_material.block_operation_rule_ids,
@@ -957,7 +1044,7 @@ class Encrypter:
         recorder.record("Bitplanes to RGB image", started)
 
         metadata = EncryptionMetadata(
-            version="encryption-v2",
+            version="encryption-v3",
             image_shape=tuple(int(value) for value in image_array.shape),
             blocks=blocks,
             config=self.config,
@@ -1069,6 +1156,29 @@ class DeEncrypter:
         return output
 
     @staticmethod
+    def invert_global_bit_permutation(
+        dna_matrix: np.ndarray,
+        key_material: EncryptionKeyMaterial,
+    ) -> np.ndarray:
+        """Inverse of :meth:`Encrypter.global_bit_permutation`."""
+        permuted_dna = np.asarray(dna_matrix, dtype=np.uint8)
+        if permuted_dna.ndim != 3 or permuted_dna.shape[0] != DNA_PLANE_COUNT:
+            raise ValueError(f"dna_matrix must have shape ({DNA_PLANE_COUNT}, H, W)")
+        _, height, width = permuted_dna.shape
+        key = key_material.global_bit_permutation_key
+        _validate_global_bit_permutation_key(key, height, width)
+
+        inverse_plane = np.argsort(key.plane_permutation)
+        inverse_rows = np.argsort(key.row_permutations, axis=1)
+        inverse_cols = np.argsort(key.col_permutations, axis=1)
+        target_planes = inverse_plane
+        return permuted_dna[
+            target_planes[:, np.newaxis, np.newaxis],
+            inverse_rows[target_planes, :, np.newaxis],
+            inverse_cols[target_planes, np.newaxis, :],
+        ]
+
+    @staticmethod
     def invert_intra_block_permutation(
         dna_matrix: np.ndarray,
         blocks: Iterable[ImageBlock],
@@ -1134,7 +1244,7 @@ class DeEncrypter:
         print_profile: bool = True,
     ) -> DecryptionResult:
         """Decrypt an image using the exact random material retained at encryption."""
-        if metadata.version != "encryption-v2":
+        if metadata.version != "encryption-v3":
             raise ValueError(f"unsupported encryption metadata version: {metadata.version}")
         if self.config is not None and self.config != metadata.config:
             raise ValueError("DeEncrypter config does not match the encryption metadata")
@@ -1168,7 +1278,7 @@ class DeEncrypter:
         recorder.record("Inverse global DNA diffusion", started)
 
         started = time.perf_counter()
-        shuffled_dna = self.invert_block_diffusion(
+        globally_permuted_dna = self.invert_block_diffusion(
             locally_diffused_dna,
             blocks,
             key_material.block_key_matrices,
@@ -1177,10 +1287,9 @@ class DeEncrypter:
         recorder.record("Inverse blockwise DNA diffusion", started)
 
         started = time.perf_counter()
-        permuted_dna = self.invert_same_size_block_shuffle(shuffled_dna, blocks, key_material.block_shuffle_keys)
-        recorder.record("Inverse same-size block shuffle", started)
+        permuted_dna = self.invert_global_bit_permutation(globally_permuted_dna, key_material)
+        recorder.record("Inverse global bit permutation", started)
 
-        # ttt
         started = time.perf_counter()
         original_dna = self.invert_permute_within_blocks_V0(
             permuted_dna,
@@ -1219,7 +1328,7 @@ class DeEncrypter:
             raise TypeError("encrypter must be an Encrypter instance")
         if encrypter._cml is None:
             raise ValueError("encrypter._cml is unavailable; initialize it with the encryption CML state")
-        if metadata.version != "encryption-v2":
+        if metadata.version != "encryption-v3":
             raise ValueError(f"unsupported encryption metadata version: {metadata.version}")
         if self.config is not None and self.config != metadata.config:
             raise ValueError("DeEncrypter config does not match the encryption metadata")
@@ -1261,6 +1370,11 @@ class DeEncrypter:
                 raise ValueError("intra-block row permutation metadata is invalid")
             if indices.col_permutation.shape != (block.width,):
                 raise ValueError("intra-block column permutation metadata is invalid")
+        _validate_global_bit_permutation_key(
+            key_material.global_bit_permutation_key,
+            height,
+            width,
+        )
         if len(key_material.block_key_matrices) != len(blocks):
             raise ValueError("block diffusion-key metadata is invalid")
         if key_material.block_operation_rule_ids.shape != (len(blocks),):
@@ -1394,6 +1508,7 @@ __all__ = [
     "EncryptionMetadata",
     "EncryptionProfile",
     "EncryptionResult",
+    "GlobalBitPermutationKey",
     "ImageBlock",
     "demo",
     "main",
