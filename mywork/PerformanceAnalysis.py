@@ -2213,7 +2213,7 @@ if __name__ == "__main__":
     # )
     #鲁棒性分析
     result = analysis.test_decryption_robustness(
-    mask_ratio=0.15,    # total nominal coverage across three mask squares
+    mask_ratio=0.25,    # total nominal coverage across three mask squares
     mask_value=0,
     salt_ratio=0.01,
     gaussian_std=0.01,
@@ -2223,3 +2223,4 @@ if __name__ == "__main__":
     )
     #明文vs密文 PSNR
     # analysis.psnr_test()
+ 
