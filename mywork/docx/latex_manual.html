@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LaTeX 论文写作手册（新手版）</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 15px; color: #222; background: #f7f8fa; display: flex; }
+  /* Sidebar */
+  #sidebar { width: 240px; min-width: 240px; background: #1e2a3a; color: #c8d6e5; height: 100vh; position: sticky; top: 0; overflow-y: auto; padding: 20px 0; flex-shrink: 0; }
+  #sidebar h2 { font-size: 14px; color: #7ecfff; padding: 0 18px 12px; border-bottom: 1px solid #2e3f55; margin-bottom: 10px; letter-spacing: 1px; }
+  #sidebar a { display: block; padding: 6px 18px; font-size: 13px; color: #c8d6e5; text-decoration: none; border-left: 3px solid transparent; transition: all .15s; }
+  #sidebar a:hover, #sidebar a.active { color: #fff; background: #25374f; border-left-color: #7ecfff; }
+  #sidebar .sub { padding-left: 32px; font-size: 12px; color: #8fa9c0; }
+  /* Main */
+  #main { flex: 1; padding: 40px 48px; max-width: 920px; background: #fff; min-height: 100vh; }
+  h1 { font-size: 28px; color: #1a2840; margin-bottom: 6px; }
+  .subtitle { color: #6b7a8d; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a3a60; margin: 36px 0 14px; padding-bottom: 6px; border-bottom: 2px solid #e0eaf6; }
+  h3 { font-size: 16px; color: #2255a0; margin: 22px 0 10px; }
+  p { line-height: 1.8; margin-bottom: 12px; color: #333; }
+  /* Code blocks */
+  pre { background: #1e2a3a; color: #e8f0f8; border-radius: 8px; padding: 16px 20px; font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font-size: 13.5px; line-height: 1.7; overflow-x: auto; margin: 12px 0 18px; position: relative; }
+  code { background: #eef3fc; color: #c0392b; border-radius: 3px; padding: 1px 5px; font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; }
+  pre code { background: none; color: inherit; padding: 0; }
+  /* Keyword coloring */
+  .kw { color: #7ecfff; }
+  .arg { color: #f8c555; }
+  .cmt { color: #6a8fa0; font-style: italic; }
+  .str { color: #a8e6a3; }
+  /* Table */
+  table { border-collapse: collapse; width: 100%; margin: 12px 0 20px; font-size: 14px; }
+  th { background: #1a3a60; color: #fff; padding: 9px 14px; text-align: left; }
+  td { padding: 8px 14px; border-bottom: 1px solid #e5eaf0; }
+  tr:nth-child(even) td { background: #f4f8fd; }
+  /* Note / tip boxes */
+  .tip { background: #eaf6ff; border-left: 4px solid #4a9eda; border-radius: 4px; padding: 12px 16px; margin: 14px 0; font-size: 14px; }
+  .warn { background: #fff8ea; border-left: 4px solid #e6a817; border-radius: 4px; padding: 12px 16px; margin: 14px 0; font-size: 14px; }
+  .tag { display: inline-block; background: #e0eaf6; color: #1a3a60; border-radius: 3px; padding: 1px 7px; font-size: 12px; margin: 1px; }
+  hr { border: none; border-top: 1px solid #e5eaf0; margin: 28px 0; }
+</style>
+</head>
+<body>
+<nav id="sidebar">
+  <h2>📄 目录</h2>
+  <a href="#s0">0. 快速开始</a>
+  <a href="#s1">1. 文档基本结构</a>
+  <a href="#s2">2. 中文支持</a>
+  <a href="#s3">3. 常用宏包</a>
+  <a href="#s4">4. 文字格式</a>
+  <a href="#s4a" class="sub">4.1 字体样式</a>
+  <a href="#s4b" class="sub">4.2 字体大小</a>
+  <a href="#s4c" class="sub">4.3 颜色与对齐</a>
+  <a href="#s5">5. 章节结构</a>
+  <a href="#s6">6. 摘要与关键词</a>
+  <a href="#s7">7. 数学公式</a>
+  <a href="#s7a" class="sub">7.1 行内与独立公式</a>
+  <a href="#s7b" class="sub">7.2 常用数学符号</a>
+  <a href="#s7c" class="sub">7.3 矩阵与方程组</a>
+  <a href="#s8">8. 列表</a>
+  <a href="#s9">9. 插入图片</a>
+  <a href="#s10">10. 表格</a>
+  <a href="#s11">11. 引用与交叉引用</a>
+  <a href="#s12">12. 参考文献</a>
+  <a href="#s13">13. 脚注与页眉页脚</a>
+  <a href="#s14">14. 完整论文模板</a>
+  <a href="#s15">15. 常见错误与解决</a>
+  <a href="#s16">16. 多文件分章管理</a>
+  <a href="#s16a" class="sub">16.1 \input 与 \include</a>
+  <a href="#s16b" class="sub">16.2 目录结构示例</a>
+  <a href="#s16c" class="sub">16.3 局部编译技巧</a>
+</nav>
+
+<main id="main">
+<h1>LaTeX 论文写作手册</h1>
+<p class="subtitle">新手快速入门指南 — 边写边查</p>
+
+<section id="s0">
+<h2>0. 快速开始</h2>
+<p>LaTeX 是一个专业的排版系统，特别适合撰写包含大量数学公式和交叉引用的学术论文。本手册专为新手设计，涵盖论文写作的核心语法。</p>
+<div class="tip"><strong>💡 提示：</strong>LaTeX 源文件是 <code>.tex</code> 后缀的纯文本文件，需要编译后生成 PDF。推荐使用 Overleaf（在线）或 TeXLive（本地）。</div>
+</section>
+
+<section id="s1">
+<h2>1. 文档基本结构</h2>
+<p>每个 LaTeX 文档都包含两部分：<strong>导言区</strong>（配置）和 <strong>正文区</strong>（内容）。</p>
+<pre><code><span class="kw">\documentclass</span><span class="arg">[12pt, a4paper]{article}</span>  <span class="cmt">% 文档类型和选项</span>
+
+<span class="cmt">% === 导言区：加载宏包和配置 ===</span>
+<span class="kw">\usepackage</span><span class="arg">{ctex}</span>         <span class="cmt">% 中文支持</span>
+<span class="kw">\usepackage</span><span class="arg">{graphicx}</span>    <span class="cmt">% 插入图片</span>
+<span class="kw">\usepackage</span><span class="arg">{amsmath}</span>     <span class="cmt">% 数学公式增强</span>
+
+<span class="kw">\title</span><span class="arg">{论文标题}</span>
+<span class="kw">\author</span><span class="arg">{作者姓名}</span>
+<span class="kw">\date</span><span class="arg">{\today}</span>          <span class="cmt">% 或指定日期</span>
+
+<span class="cmt">% === 正文区 ===</span>
+<span class="kw">\begin</span><span class="arg">{document}</span>
+
+<span class="kw">\maketitle</span>                  <span class="cmt">% 生成标题</span>
+
+这里是正文内容...
+
+<span class="kw">\end</span><span class="arg">{document}</span></code></pre>
+
+<h3>常用文档类型</h3>
+<table>
+<tr><th>文档类</th><th>说明</th><th>适用场景</th></tr>
+<tr><td><code>article</code></td><td>短文章</td><td>期刊论文、报告</td></tr>
+<tr><td><code>report</code></td><td>长报告</td><td>技术报告、学位论文章节</td></tr>
+<tr><td><code>book</code></td><td>书籍</td><td>完整书稿</td></tr>
+<tr><td><code>ctexart</code></td><td>中文文章</td><td>中文论文（自动加载ctex）</td></tr>
+</table>
+</section>
+
+<section id="s2">
+<h2>2. 中文支持</h2>
+<p>撰写中文论文时，必须使用 <code>ctex</code> 宏包或 <code>ctexart</code> 文档类：</p>
+<pre><code><span class="cmt">% 方法一：使用 ctex 宏包</span>
+<span class="kw">\documentclass</span><span class="arg">{article}</span>
+<span class="kw">\usepackage</span><span class="arg">{ctex}</span>
+
+<span class="cmt">% 方法二：直接使用中文文档类（推荐）</span>
+<span class="kw">\documentclass</span><span class="arg">{ctexart}</span>   <span class="cmt">% 自动支持中文</span></code></pre>
+<div class="tip"><strong>💡 编译命令：</strong>使用 <code>xelatex</code> 或 <code>pdflatex</code> 编译含中文的文档。</div>
+</section>
+
+<section id="s3">
+<h2>3. 常用宏包</h2>
+<p>宏包为 LaTeX 提供扩展功能，在导言区使用 <code>\usepackage{包名}</code> 加载：</p>
+<table>
+<tr><th>宏包</th><th>功能</th><th>示例用法</th></tr>
+<tr><td><code>amsmath</code></td><td>数学公式增强</td><td>多行公式、对齐</td></tr>
+<tr><td><code>graphicx</code></td><td>插入图片</td><td><code>\includegraphics{file.png}</code></td></tr>
+<tr><td><code>geometry</code></td><td>页面设置</td><td><code>\usepackage[margin=2.5cm]{geometry}</code></td></tr>
+<tr><td><code>hyperref</code></td><td>超链接与PDF书签</td><td>自动生成目录链接</td></tr>
+<tr><td><code>cite</code> / <code>natbib</code></td><td>参考文献管理</td><td>引用格式控制</td></tr>
+<tr><td><code>booktabs</code></td><td>专业三线表</td><td><code>\toprule</code>, <code>\midrule</code></td></tr>
+<tr><td><code>xcolor</code></td><td>文字颜色</td><td><code>\textcolor{red}{文字}</code></td></tr>
+</table>
+</section>
+
+<section id="s4">
+<h2>4. 文字格式</h2>
+
+<h3 id="s4a">4.1 字体样式</h3>
+<table>
+<tr><th>效果</th><th>命令</th><th>示例</th></tr>
+<tr><td>粗体</td><td><code>\textbf{文字}</code></td><td><strong>粗体文字</strong></td></tr>
+<tr><td>斜体</td><td><code>\textit{文字}</code></td><td><em>斜体文字</em></td></tr>
+<tr><td>下划线</td><td><code>\underline{文字}</code></td><td><u>下划线</u></td></tr>
+<tr><td>打字机字体</td><td><code>\texttt{code}</code></td><td>code</td></tr>
+<tr><td>小型大写</td><td><code>\textsc{Text}</code></td><td>TEXT</td></tr>
+</table>
+
+<h3 id="s4b">4.2 字体大小</h3>
+<pre><code><span class="kw">\tiny</span> 最小  <span class="kw">\scriptsize</span> 很小  <span class="kw">\footnotesize</span> 较小
+<span class="kw">\small</span> 小号  <span class="kw">\normalsize</span> 正常  <span class="kw">\large</span> 大号
+<span class="kw">\Large</span> 更大  <span class="kw">\LARGE</span> 很大  <span class="kw">\huge</span> 巨大  <span class="kw">\Huge</span> 最大
+
+<span class="cmt">% 使用方式：</span>
+<span class="arg">{</span><span class="kw">\large</span> 这段文字是大号字体<span class="arg">}</span></code></pre>
+
+<h3 id="s4c">4.3 颜色与对齐</h3>
+<pre><code><span class="cmt">% 需要 xcolor 宏包</span>
+<span class="kw">\textcolor</span><span class="arg">{red}</span>{红色文字}
+<span class="kw">\textcolor</span><span class="arg">{blue}</span>{蓝色文字}
+
+<span class="cmt">% 对齐方式</span>
+<span class="kw">\begin</span><span class="arg">{center}</span>
+  居中文字
+<span class="kw">\end</span><span class="arg">{center}</span>
+
+<span class="kw">\begin</span><span class="arg">{flushleft}</span>  <span class="cmt">% 左对齐</span>
+<span class="kw">\begin</span><span class="arg">{flushright}</span> <span class="cmt">% 右对齐</span></code></pre>
+</section>
+
+<section id="s5">
+<h2>5. 章节结构</h2>
+<p>LaTeX 提供层次化的章节命令：</p>
+<pre><code><span class="kw">\section</span><span class="arg">{第一章}</span>
+这是第一章的内容。
+
+<span class="kw">\subsection</span><span class="arg">{1.1 小节}</span>
+这是小节的内容。
+
+<span class="kw">\subsubsection</span><span class="arg">{1.1.1 子小节}</span>
+这是子小节的内容。
+
+<span class="kw">\paragraph</span><span class="arg">{段落标题}</span> 段落内容...
+<span class="kw">\subparagraph</span><span class="arg">{子段落}</span> 更细分的内容...</code></pre>
+
+<div class="tip"><strong>💡 自动编号：</strong>章节会自动编号。如需取消编号，使用星号版本：<code>\section*{无编号章节}</code></div>
+
+<p><strong>生成目录：</strong></p>
+<pre><code><span class="kw">\tableofcontents</span>  <span class="cmt">% 自动根据章节生成目录</span></code></pre>
+</section>
+
+<section id="s6">
+<h2>6. 摘要与关键词</h2>
+<pre><code><span class="kw">\begin</span><span class="arg">{abstract}</span>
+  本文研究了……这是论文的摘要部分。
+<span class="kw">\end</span><span class="arg">{abstract}</span>
+
+<span class="cmt">% 关键词（需要手动格式化）</span>
+<span class="kw">\noindent</span> <span class="kw">\textbf</span>{关键词：} 机器学习；深度学习；神经网络</code></pre>
+</section>
+
+<section id="s7">
+<h2>7. 数学公式</h2>
+
+<h3 id="s7a">7.1 行内公式与独立公式</h3>
+<pre><code><span class="cmt">% 行内公式：用 $ ... $ 包围</span>
+爱因斯坦质能方程 $E = mc^2$ 是物理学基础。
+
+<span class="cmt">% 独立公式（不编号）：用 \[ ... \]</span>
+<span class="kw">\[</span>
+  a^2 + b^2 = c^2
+<span class="kw">\]</span>
+
+<span class="cmt">% 独立公式（自动编号）：equation 环境</span>
+<span class="kw">\begin</span><span class="arg">{equation}</span>
+  f(x) = \frac{1}{\sqrt{2\pi}\sigma}
+         e^{-\frac{(x-\mu)^2}{2\sigma^2}}
+<span class="kw">\end</span><span class="arg">{equation}</span></code></pre>
+
+<h3 id="s7b">7.2 常用数学符号速查</h3>
+<table>
+<tr><th>类型</th><th>符号效果</th><th>LaTeX 命令</th></tr>
+<tr><td>上下标</td><td>x²  xₙ</td><td><code>x^2</code>  <code>x_n</code></td></tr>
+<tr><td>分数</td><td>a/b</td><td><code>\frac{a}{b}</code></td></tr>
+<tr><td>根号</td><td>√x  ³√x</td><td><code>\sqrt{x}</code>  <code>\sqrt[3]{x}</code></td></tr>
+<tr><td>求和</td><td>∑</td><td><code>\sum_{i=1}^{n} x_i</code></td></tr>
+<tr><td>积分</td><td>∫</td><td><code>\int_0^{\infty} f(x)\,dx</code></td></tr>
+<tr><td>极限</td><td>lim</td><td><code>\lim_{x \to 0} f(x)</code></td></tr>
+<tr><td>希腊字母</td><td>α β γ δ θ λ μ σ</td><td><code>\alpha \beta \gamma \delta \theta \lambda \mu \sigma</code></td></tr>
+<tr><td>箭头</td><td>→ ← ↔ ⇒ ⇔</td><td><code>\to \leftarrow \leftrightarrow \Rightarrow \Leftrightarrow</code></td></tr>
+<tr><td>比较</td><td>≤ ≥ ≠ ≈</td><td><code>\leq \geq \neq \approx</code></td></tr>
+<tr><td>集合</td><td>∈ ∉ ⊆ ∪ ∩ ∅</td><td><code>\in \notin \subseteq \cup \cap \emptyset</code></td></tr>
+<tr><td>偏导数</td><td>∂f/∂x</td><td><code>\frac{\partial f}{\partial x}</code></td></tr>
+<tr><td>无穷大</td><td>∞</td><td><code>\infty</code></td></tr>
+<tr><td>范数</td><td>‖x‖</td><td><code>\|x\|</code> 或 <code>\lVert x \rVert</code></td></tr>
+</table>
+
+<h3 id="s7c">7.3 矩阵与方程组</h3>
+<pre><code><span class="cmt">% 矩阵（需要 amsmath 宏包）</span>
+<span class="kw">\begin</span><span class="arg">{equation}</span>
+  A = \begin{bmatrix}   <span class="cmt">% bmatrix=方括号; pmatrix=圆括号; vmatrix=行列式</span>
+    1 &amp; 2 &amp; 3 \\
+    4 &amp; 5 &amp; 6 \\
+    7 &amp; 8 &amp; 9
+  \end{bmatrix}
+<span class="kw">\end</span><span class="arg">{equation}</span>
+
+<span class="cmt">% 多行公式对齐（& 对齐位置）</span>
+<span class="kw">\begin</span><span class="arg">{align}</span>
+  y &amp;= ax^2 + bx + c \\
+    &amp;= a\left(x + \frac{b}{2a}\right)^2 + c - \frac{b^2}{4a}
+<span class="kw">\end</span><span class="arg">{align}</span>
+
+<span class="cmt">% 方程组</span>
+<span class="kw">\begin</span><span class="arg">{equation}</span>
+  \begin{cases}
+    x + y = 5 \\
+    2x - y = 1
+  \end{cases}
+<span class="kw">\end</span><span class="arg">{equation}</span></code></pre>
+<div class="tip"><strong>💡 括号自适应大小：</strong>用 <code>\left(</code> 和 <code>\right)</code> 代替普通括号，括号会自动匹配内部公式的高度。</div>
+</section>
+
+<section id="s8">
+<h2>8. 列表</h2>
+<pre><code><span class="cmt">% 无序列表（bullet points）</span>
+<span class="kw">\begin</span><span class="arg">{itemize}</span>
+  <span class="kw">\item</span> 第一项内容
+  <span class="kw">\item</span> 第二项内容
+  <span class="kw">\item</span> 第三项内容
+<span class="kw">\end</span><span class="arg">{itemize}</span>
+
+<span class="cmt">% 有序列表（自动编号）</span>
+<span class="kw">\begin</span><span class="arg">{enumerate}</span>
+  <span class="kw">\item</span> 第一步
+  <span class="kw">\item</span> 第二步
+  <span class="kw">\item</span> 第三步
+<span class="kw">\end</span><span class="arg">{enumerate}</span>
+
+<span class="cmt">% 描述性列表</span>
+<span class="kw">\begin</span><span class="arg">{description}</span>
+  <span class="kw">\item</span><span class="arg">[方法A]</span> 该方法的解释说明
+  <span class="kw">\item</span><span class="arg">[方法B]</span> 该方法的解释说明
+<span class="kw">\end</span><span class="arg">{description}</span></code></pre>
+<div class="tip"><strong>💡 嵌套列表：</strong>列表内部可以再嵌套一层列表，例如在 <code>\item</code> 后再起一个 <code>itemize</code>。</div>
+</section>
+
+<section id="s9">
+<h2>9. 插入图片</h2>
+<p>需要 <code>graphicx</code> 宏包。图片（PNG/JPG/PDF）放在 .tex 文件同目录下。</p>
+<pre><code><span class="cmt">% 单张图片</span>
+<span class="kw">\begin</span><span class="arg">{figure}</span><span class="arg">[htbp]</span>   <span class="cmt">% 位置：h当前 t顶部 b底部 p单独页</span>
+  <span class="kw">\centering</span>
+  <span class="kw">\includegraphics</span><span class="arg">[width=0.8\textwidth]</span><span class="arg">{图片文件名}</span>
+  <span class="kw">\caption</span><span class="arg">{图1：说明文字写在这里}</span>
+  <span class="kw">\label</span><span class="arg">{fig:example}</span>
+<span class="kw">\end</span><span class="arg">{figure}</span>
+
+<span class="cmt">% 在正文中引用该图：</span>
+如图~<span class="kw">\ref</span><span class="arg">{fig:example}</span>所示，……
+
+<span class="cmt">% 并排两图（各占45%宽度）</span>
+<span class="kw">\begin</span><span class="arg">{figure}</span><span class="arg">[htbp]</span>
+  <span class="kw">\centering</span>
+  <span class="kw">\begin</span><span class="arg">{minipage}</span><span class="arg">{0.45\textwidth}</span>
+    <span class="kw">\includegraphics</span><span class="arg">[width=\textwidth]</span><span class="arg">{图1}</span>
+    <span class="kw">\caption</span><span class="arg">{(a) 图1说明}</span>
+  <span class="kw">\end</span><span class="arg">{minipage}</span>
+  <span class="kw">\hfill</span>
+  <span class="kw">\begin</span><span class="arg">{minipage}</span><span class="arg">{0.45\textwidth}</span>
+    <span class="kw">\includegraphics</span><span class="arg">[width=\textwidth]</span><span class="arg">{图2}</span>
+    <span class="kw">\caption</span><span class="arg">{(b) 图2说明}</span>
+  <span class="kw">\end</span><span class="arg">{minipage}</span>
+<span class="kw">\end</span><span class="arg">{figure}</span></code></pre>
+</section>
+
+<section id="s10">
+<h2>10. 表格</h2>
+<h3>基本表格</h3>
+<pre><code><span class="kw">\begin</span><span class="arg">{table}</span><span class="arg">[htbp]</span>
+  <span class="kw">\centering</span>
+  <span class="kw">\caption</span><span class="arg">{表1：实验结果对比}</span>
+  <span class="kw">\label</span><span class="arg">{tab:result}</span>
+  <span class="kw">\begin</span><span class="arg">{tabular}</span><span class="arg">{|c|c|c|}</span>   <span class="cmt">% c居中 l左 r右, | 是竖线</span>
+    <span class="kw">\hline</span>
+    方法 &amp; 精度 &amp; 速度(ms) <span class="kw">\\</span>
+    <span class="kw">\hline</span>
+    方法A &amp; 92.3\% &amp; 12 <span class="kw">\\</span>
+    方法B &amp; 94.1\% &amp; 18 <span class="kw">\\</span>
+    <span class="kw">\hline</span>
+  <span class="kw">\end</span><span class="arg">{tabular}</span>
+<span class="kw">\end</span><span class="arg">{table}</span></code></pre>
+
+<h3>专业三线表（论文推荐格式）</h3>
+<pre><code><span class="cmt">% 需要 \usepackage{booktabs}</span>
+<span class="kw">\begin</span><span class="arg">{table}</span><span class="arg">[htbp]</span>
+  <span class="kw">\centering</span>
+  <span class="kw">\caption</span><span class="arg">{表2：三线表示例}</span>
+  <span class="kw">\begin</span><span class="arg">{tabular}</span><span class="arg">{lcr}</span>   <span class="cmt">% 无竖线</span>
+    <span class="kw">\toprule</span>             <span class="cmt">% 顶线</span>
+    方法 &amp; 精度(\%) &amp; 时间(ms) <span class="kw">\\</span>
+    <span class="kw">\midrule</span>             <span class="cmt">% 中线</span>
+    方法A &amp; 92.3 &amp; 12 <span class="kw">\\</span>
+    方法B &amp; 94.1 &amp; 18 <span class="kw">\\</span>
+    <span class="kw">\bottomrule</span>          <span class="cmt">% 底线</span>
+  <span class="kw">\end</span><span class="arg">{tabular}</span>
+<span class="kw">\end</span><span class="arg">{table}</span>
+
+<span class="cmt">% 合并列（列合并）</span>
+<span class="kw">\multicolumn</span><span class="arg">{2}</span><span class="arg">{c}</span><span class="arg">{合并两列}</span>   <span class="cmt">% {列数}{对齐}{内容}</span>
+<span class="cmt">% 合并行（需要 multirow 宏包）</span>
+<span class="kw">\multirow</span><span class="arg">{2}</span><span class="arg">{*}</span><span class="arg">{合并两行}</span>    <span class="cmt">% {行数}{宽度}{内容}</span></code></pre>
+</section>
+
+<section id="s11">
+<h2>11. 引用与交叉引用</h2>
+<p>LaTeX 可以自动管理章节、图表、公式的编号和引用。</p>
+<pre><code><span class="cmt">% 第一步：为对象添加标签</span>
+<span class="kw">\section</span><span class="arg">{实验方法}</span>
+<span class="kw">\label</span><span class="arg">{sec:method}</span>
+
+<span class="kw">\begin</span><span class="arg">{equation}</span>
+  E = mc^2
+  <span class="kw">\label</span><span class="arg">{eq:einstein}</span>
+<span class="kw">\end</span><span class="arg">{equation}</span>
+
+<span class="kw">\begin</span><span class="arg">{figure}</span><span class="arg">[htbp]</span>
+  ...
+  <span class="kw">\label</span><span class="arg">{fig:result}</span>
+<span class="kw">\end</span><span class="arg">{figure}</span>
+
+<span class="cmt">% 第二步：在正文中引用</span>
+在第~<span class="kw">\ref</span><span class="arg">{sec:method}</span>节中，我们提出了……
+如图~<span class="kw">\ref</span><span class="arg">{fig:result}</span>所示，结果表明……
+根据公式~<span class="kw">\ref</span><span class="arg">{eq:einstein}</span>，能量与质量成正比。</code></pre>
+<div class="tip"><strong>💡 引用命名规范：</strong>推荐用前缀区分类型：<code>sec:</code> 章节、<code>fig:</code> 图、<code>tab:</code> 表、<code>eq:</code> 公式。</div>
+</section>
+
+<section id="s12">
+<h2>12. 参考文献</h2>
+
+<h3>方法一：手动列表（简单论文）</h3>
+<pre><code><span class="kw">\begin</span><span class="arg">{thebibliography}</span><span class="arg">{99}</span>   <span class="cmt">% 99表示最多99条</span>
+  <span class="kw">\bibitem</span><span class="arg">{ref1}</span> 张三, 李四. 论文标题[J]. 期刊名, 2024, 10(2): 1-10.
+  <span class="kw">\bibitem</span><span class="arg">{ref2}</span> Smith J, Doe A. Paper Title[C]//Conference Name. 2024: 100-110.
+<span class="kw">\end</span><span class="arg">{thebibliography}</span>
+
+<span class="cmt">% 在正文中引用：</span>
+根据文献<span class="kw">\cite</span><span class="arg">{ref1}</span>的研究，……
+多个引用可以写在一起<span class="kw">\cite</span><span class="arg">{ref1, ref2}</span>。</code></pre>
+
+<h3>方法二：BibTeX（推荐，适合大论文）</h3>
+<p>BibTeX 将参考文献存在单独的 <code>.bib</code> 文件中，自动格式化。</p>
+
+<p><span class="tag">第一步</span> 创建 <code>references.bib</code> 文件：</p>
+<pre><code>@article{zhang2024deep,
+  title={深度学习在图像识别中的应用},
+  author={张三 and 李四},
+  journal={计算机学报},
+  volume={10},
+  number={2},
+  pages={1--10},
+  year={2024}
+}
+
+@inproceedings{smith2024neural,
+  title={Neural Network Optimization},
+  author={Smith, John and Doe, Alice},
+  booktitle={Proc. of ICML},
+  pages={100--110},
+  year={2024}
+}</code></pre>
+
+<p><span class="tag">第二步</span> 在 .tex 文件末尾添加：</p>
+<pre><code><span class="cmt">% 正文中引用：</span>
+根据文献<span class="kw">\cite</span><span class="arg">{zhang2024deep}</span>的研究，……
+
+<span class="cmt">% 文档末尾：</span>
+<span class="kw">\bibliographystyle</span><span class="arg">{plain}</span>  <span class="cmt">% 引用格式：plain/ieeetr/alpha/unsrt</span>
+<span class="kw">\bibliography</span><span class="arg">{references}</span>     <span class="cmt">% 不带.bib后缀</span></code></pre>
+
+<div class="warn"><strong>⚠️ 编译顺序：</strong>使用 BibTeX 时需要多次编译：<br>
+1. <code>pdflatex 文件名.tex</code><br>
+2. <code>bibtex 文件名</code><br>
+3. <code>pdflatex 文件名.tex</code>（两次）</div>
+</section>
+
+<section id="s13">
+<h2>13. 脚注与页眉页脚</h2>
+<pre><code><span class="cmt">% 脚注</span>
+这是正文内容<span class="kw">\footnote</span><span class="arg">{这是脚注说明。}</span>
+
+<span class="cmt">% 自定义页眉页脚（需要 fancyhdr 宏包）</span>
+<span class="kw">\usepackage</span><span class="arg">{fancyhdr}</span>
+<span class="kw">\pagestyle</span><span class="arg">{fancy}</span>
+<span class="kw">\lhead</span><span class="arg">{左页眉}</span>
+<span class="kw">\chead</span><span class="arg">{中间页眉}</span>
+<span class="kw">\rhead</span><span class="arg">{右页眉}</span>
+<span class="kw">\lfoot</span><span class="arg">{左页脚}</span>
+<span class="kw">\cfoot</span><span class="arg">{\thepage}</span>   <span class="cmt">% 页码</span>
+<span class="kw">\rfoot</span><span class="arg">{右页脚}</span></code></pre>
+</section>
+
+<section id="s14">
+<h2>14. 完整论文模板</h2>
+<p>下面是一个包含常用元素的完整示例：</p>
+<pre><code><span class="kw">\documentclass</span><span class="arg">[12pt, a4paper]{ctexart}</span>
+
+<span class="cmt">% 导言区：宏包加载</span>
+<span class="kw">\usepackage</span><span class="arg">{amsmath, amssymb}</span>   <span class="cmt">% 数学公式</span>
+<span class="kw">\usepackage</span><span class="arg">{graphicx}</span>            <span class="cmt">% 图片</span>
+<span class="kw">\usepackage</span><span class="arg">{booktabs}</span>            <span class="cmt">% 三线表</span>
+<span class="kw">\usepackage</span><span class="arg">[margin=2.5cm]{geometry}</span>  <span class="cmt">% 页边距</span>
+<span class="kw">\usepackage</span><span class="arg">{hyperref}</span>            <span class="cmt">% 超链接</span>
+
+<span class="kw">\title</span><span class="arg">{基于深度学习的图像识别研究}</span>
+<span class="kw">\author</span><span class="arg">{张三}</span>
+<span class="kw">\date</span><span class="arg">{\today}</span>
+
+<span class="kw">\begin</span><span class="arg">{document}</span>
+
+<span class="kw">\maketitle</span>
+
+<span class="kw">\begin</span><span class="arg">{abstract}</span>
+  本文研究了深度学习在图像识别中的应用……（摘要内容）
+<span class="kw">\end</span><span class="arg">{abstract}</span>
+
+<span class="kw">\noindent</span> <span class="kw">\textbf</span>{关键词：}深度学习；图像识别；卷积神经网络
+
+<span class="kw">\tableofcontents</span>
+<span class="kw">\newpage</span>
+
+<span class="kw">\section</span><span class="arg">{引言}</span>
+<span class="kw">\label</span><span class="arg">{sec:intro}</span>
+随着人工智能的发展……
+
+<span class="kw">\section</span><span class="arg">{相关工作}</span>
+文献<span class="kw">\cite</span><span class="arg">{ref1}</span>提出了……
+
+<span class="kw">\section</span><span class="arg">{研究方法}</span>
+<span class="kw">\label</span><span class="arg">{sec:method}</span>
+
+<span class="kw">\subsection</span><span class="arg">{数据预处理}</span>
+我们使用了以下公式进行归一化：
+<span class="kw">\begin</span><span class="arg">{equation}</span>
+  x' = \frac{x - \mu}{\sigma}
+  <span class="kw">\label</span><span class="arg">{eq:norm}</span>
+<span class="kw">\end</span><span class="arg">{equation}</span>
+
+<span class="kw">\subsection</span><span class="arg">{模型架构}</span>
+如图~<span class="kw">\ref</span><span class="arg">{fig:arch}</span>所示，我们的模型包含……
+
+<span class="kw">\begin</span><span class="arg">{figure}</span><span class="arg">[htbp]</span>
+  <span class="kw">\centering</span>
+  <span class="kw">\includegraphics</span><span class="arg">[width=0.7\textwidth]</span><span class="arg">{architecture.png}</span>
+  <span class="kw">\caption</span><span class="arg">{模型架构图}</span>
+  <span class="kw">\label</span><span class="arg">{fig:arch}</span>
+<span class="kw">\end</span><span class="arg">{figure}</span>
+
+<span class="kw">\section</span><span class="arg">{实验结果}</span>
+实验结果见表~<span class="kw">\ref</span><span class="arg">{tab:result}</span>。
+
+<span class="kw">\begin</span><span class="arg">{table}</span><span class="arg">[htbp]</span>
+  <span class="kw">\centering</span>
+  <span class="kw">\caption</span><span class="arg">{实验结果对比}</span>
+  <span class="kw">\label</span><span class="arg">{tab:result}</span>
+  <span class="kw">\begin</span><span class="arg">{tabular}</span><span class="arg">{lcc}</span>
+    <span class="kw">\toprule</span>
+    方法 &amp; 准确率(\%) &amp; 时间(ms) <span class="kw">\\</span>
+    <span class="kw">\midrule</span>
+    方法A &amp; 92.3 &amp; 12 <span class="kw">\\</span>
+    方法B &amp; 94.1 &amp; 18 <span class="kw">\\</span>
+    本文方法 &amp; <span class="kw">\textbf</span>{95.7} &amp; 15 <span class="kw">\\</span>
+    <span class="kw">\bottomrule</span>
+  <span class="kw">\end</span><span class="arg">{tabular}</span>
+<span class="kw">\end</span><span class="arg">{table}</span>
+
+<span class="kw">\section</span><span class="arg">{结论}</span>
+本文提出了……
+
+<span class="cmt">% 参考文献</span>
+<span class="kw">\begin</span><span class="arg">{thebibliography}</span><span class="arg">{99}</span>
+  <span class="kw">\bibitem</span><span class="arg">{ref1}</span> 张三, 李四. 深度学习综述[J]. 计算机学报, 2024.
+<span class="kw">\end</span><span class="arg">{thebibliography}</span>
+
+<span class="kw">\end</span><span class="arg">{document}</span></code></pre>
+</section>
+
+<section id="s15">
+<h2>15. 常见错误与解决</h2>
+
+<table>
+<tr><th>错误现象</th><th>原因</th><th>解决方法</th></tr>
+<tr><td>中文不显示</td><td>未加载中文支持</td><td>使用 <code>\usepackage{ctex}</code> 或 <code>ctexart</code> 文档类</td></tr>
+<tr><td>公式无法显示</td><td>缺少 $ 符号</td><td>行内公式用 <code>$...$</code> 包围</td></tr>
+<tr><td>图片找不到</td><td>文件路径错误</td><td>确保图片在同目录，或使用绝对路径</td></tr>
+<tr><td>引用显示 ??</td><td>未编译足够次数</td><td>多编译几次（至少2次）</td></tr>
+<tr><td>表格对齐错误</td><td>列数不匹配</td><td>检查每行 <code>&</code> 符号数量是否一致</td></tr>
+<tr><td>特殊字符报错</td><td>% # & $ 等需转义</td><td>用 <code>\%</code> <code>\#</code> <code>\&</code> <code>\$</code></td></tr>
+</table>
+
+<div class="warn"><strong>⚠️ 调试技巧：</strong>
+• 查看 <code>.log</code> 文件了解错误详情<br>
+• 从最小示例开始，逐步添加内容<br>
+• 注释掉部分代码定位问题所在<br>
+• 使用 Overleaf 可以实时看到错误提示</div>
+
+</section>
+
+<section id="s16">
+<h2>16. 多文件分章管理</h2>
+<p>写较长的论文时，将每个章节放到独立的 <code>.tex</code> 文件中，再在主文件里引用，是一种非常实用的组织方式。这样每次只需打开对应章节文件写作，主文件负责整合和编译。</p>
+
+<h3 id="s16a">16.1 \input 与 \include 的区别</h3>
+
+<table>
+<tr><th>命令</th><th>效果</th><th>适用场景</th></tr>
+<tr><td><code>\input{文件}</code></td><td>原地插入内容，不分页，不受 <code>\includeonly</code> 影响</td><td>导言区配置、共用宏定义、小片段</td></tr>
+<tr><td><code>\include{文件}</code></td><td>插入前后自动新起一页，支持 <code>\includeonly</code> 局部编译</td><td>论文各章节（推荐）</td></tr>
+</table>
+
+<div class="tip"><strong>💡 注意：</strong><code>\include</code> 的文件名<strong>不能</strong>带 <code>.tex</code> 后缀，<code>\input</code> 则可带可不带。<br>
+例如：<code>\include{chapters/intro}</code>（✓）  <code>\include{chapters/intro.tex}</code>（✗）</div>
+
+<h3 id="s16b">16.2 推荐目录结构</h3>
+<p>将章节文件统一放在 <code>chapters/</code> 子文件夹中，图片放在 <code>figures/</code>，参考文献放在根目录：</p>
+<pre><code><span class="cmt">my_thesis/                ← 整个项目根目录</span>
+├── main.tex              <span class="cmt">← 主文件（唯一需要编译的文件）</span>
+├── references.bib        <span class="cmt">← 参考文献数据库</span>
+├── chapters/             <span class="cmt">← 章节文件夹</span>
+│   ├── abstract.tex      <span class="cmt">← 摘要</span>
+│   ├── ch01_intro.tex    <span class="cmt">← 第1章：引言</span>
+│   ├── ch02_related.tex  <span class="cmt">← 第2章：相关工作</span>
+│   ├── ch03_method.tex   <span class="cmt">← 第3章：研究方法</span>
+│   ├── ch04_experiment.tex
+│   └── ch05_conclusion.tex
+└── figures/              <span class="cmt">← 图片文件夹</span>
+    ├── architecture.png
+    └── results.pdf</code></pre>
+
+<h3>主文件 main.tex 的写法</h3>
+<pre><code><span class="kw">\documentclass</span><span class="arg">[12pt, a4paper]{ctexart}</span>
+
+<span class="kw">\usepackage</span><span class="arg">{amsmath, graphicx, booktabs, hyperref}</span>
+<span class="kw">\graphicspath</span><span class="arg">{{figures/}}</span>  <span class="cmt">% 告诉 LaTeX 在 figures/ 中找图片</span>
+
+<span class="kw">\title</span><span class="arg">{我的论文标题}</span>
+<span class="kw">\author</span><span class="arg">{作者姓名}</span>
+<span class="kw">\date</span><span class="arg">{\today}</span>
+
+<span class="kw">\begin</span><span class="arg">{document}</span>
+
+<span class="kw">\maketitle</span>
+<span class="kw">\tableofcontents</span>
+<span class="kw">\newpage</span>
+
+<span class="cmt">% 引入各章节文件（自动在每章前后分页）</span>
+<span class="kw">\include</span><span class="arg">{chapters/abstract}</span>
+<span class="kw">\include</span><span class="arg">{chapters/ch01_intro}</span>
+<span class="kw">\include</span><span class="arg">{chapters/ch02_related}</span>
+<span class="kw">\include</span><span class="arg">{chapters/ch03_method}</span>
+<span class="kw">\include</span><span class="arg">{chapters/ch04_experiment}</span>
+<span class="kw">\include</span><span class="arg">{chapters/ch05_conclusion}</span>
+
+<span class="cmt">% 参考文献</span>
+<span class="kw">\bibliographystyle</span><span class="arg">{plain}</span>
+<span class="kw">\bibliography</span><span class="arg">{references}</span>
+
+<span class="kw">\end</span><span class="arg">{document}</span></code></pre>
+
+<h3>章节文件示例（chapters/ch01_intro.tex）</h3>
+<p>章节文件只写正文内容，<strong>不需要</strong> <code>\documentclass</code> 和 <code>\begin{document}</code>，直接从章节命令开始：</p>
+<pre><code><span class="cmt">% 文件：chapters/ch01_intro.tex</span>
+<span class="cmt">% （不含 \documentclass 和 \begin{document}！）</span>
+
+<span class="kw">\section</span><span class="arg">{引言}</span>
+<span class="kw">\label</span><span class="arg">{sec:intro}</span>
+
+随着人工智能技术的飞速发展……
+
+<span class="kw">\subsection</span><span class="arg">{研究背景}</span>
+近年来，深度学习在多个领域取得了突破性进展……
+
+<span class="kw">\subsection</span><span class="arg">{本文贡献}</span>
+本文的主要贡献如下：
+<span class="kw">\begin</span><span class="arg">{itemize}</span>
+  <span class="kw">\item</span> 提出了一种新的模型架构；
+  <span class="kw">\item</span> 在多个基准数据集上验证了方法的有效性。
+<span class="kw">\end</span><span class="arg">{itemize}</span></code></pre>
+
+<div class="tip"><strong>💡 图片路径：</strong>章节文件中引用图片时，路径相对于<strong>主文件</strong>所在目录，而非章节文件本身。例如在章节文件里写 <code>\includegraphics{figures/arch.png}</code> 是正确的，因为主文件在 <code>my_thesis/</code>，图片就在 <code>my_thesis/figures/</code>。</div>
+
+<h3 id="s16c">16.3 局部编译（只编译部分章节）</h3>
+<p>论文很长时，每次全量编译很慢。在导言区使用 <code>\includeonly</code> 可以只编译指定的章节，其他章节的编号和引用依然保持正确：</p>
+<pre><code><span class="kw">\documentclass</span><span class="arg">{ctexart}</span>
+<span class="kw">\usepackage</span><span class="arg">{...</span>}
+
+<span class="cmt">% 只编译第3章和第4章，其余章节跳过但保留编号</span>
+<span class="kw">\includeonly</span><span class="arg">{chapters/ch03_method, chapters/ch04_experiment}</span>
+
+<span class="kw">\begin</span><span class="arg">{document}</span>
+  ...
+  <span class="kw">\include</span><span class="arg">{chapters/ch01_intro}</span>       <span class="cmt">% 跳过（不生成内容）</span>
+  <span class="kw">\include</span><span class="arg">{chapters/ch02_related}</span>     <span class="cmt">% 跳过</span>
+  <span class="kw">\include</span><span class="arg">{chapters/ch03_method}</span>      <span class="cmt">% ✓ 编译</span>
+  <span class="kw">\include</span><span class="arg">{chapters/ch04_experiment}</span>  <span class="cmt">% ✓ 编译</span>
+  ...
+<span class="kw">\end</span><span class="arg">{document}</span></code></pre>
+
+<div class="warn"><strong>⚠️ 注意：</strong><code>\includeonly</code> 只对 <code>\include</code> 生效，对 <code>\input</code> 无效。写完某章后，删除或注释掉 <code>\includeonly</code> 行即可恢复全量编译。</div>
+
+<h3>编译时始终只编译 main.tex</h3>
+<p>无论你在哪个章节文件中写作，<strong>编译时始终运行主文件</strong>，不要直接编译章节文件：</p>
+<pre><code><span class="cmt"># 正确：编译主文件</span>
+xelatex main.tex
+
+<span class="cmt"># 错误：直接编译章节文件（会报错，因为章节文件没有 \documentclass）</span>
+xelatex chapters/ch01_intro.tex  <span class="cmt">← 不要这样做</span></code></pre>
+
+</section>
+
+<hr>
+
+<h2 style="margin-top: 40px; text-align: center; color: #1a3a60;">📚 快速参考卡片</h2>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px;">
+  <div style="background: #f0f6fc; border-left: 4px solid #4a9eda; padding: 14px; border-radius: 6px;">
+    <strong style="color: #1a3a60;">文档结构</strong><br>
+    <code>\documentclass{ctexart}</code><br>
+    <code>\begin{document}...\end{document}</code>
+  </div>
+  <div style="background: #f0f6fc; border-left: 4px solid #4a9eda; padding: 14px; border-radius: 6px;">
+    <strong style="color: #1a3a60;">数学公式</strong><br>
+    行内：<code>$E=mc^2$</code><br>
+    独立：<code>\[ ... \]</code> 或 <code>\begin{equation}</code>
+  </div>
+  <div style="background: #f0f6fc; border-left: 4px solid #4a9eda; padding: 14px; border-radius: 6px;">
+    <strong style="color: #1a3a60;">插图与表格</strong><br>
+    <code>\begin{figure}[htbp]</code><br>
+    <code>\begin{table}[htbp]</code>
+  </div>
+  <div style="background: #f0f6fc; border-left: 4px solid #4a9eda; padding: 14px; border-radius: 6px;">
+    <strong style="color: #1a3a60;">交叉引用</strong><br>
+    设置：<code>\label{标签}</code><br>
+    引用：<code>\ref{标签}</code>
+  </div>
+</div>
+
+<p style="margin-top: 36px; text-align: center; color: #6b7a8d; font-size: 14px;">
+  🎓 祝论文写作顺利！遇到问题可随时查阅本手册。<br>
+  <em>LaTeX 官方文档：<a href="https://www.latex-project.org/" target="_blank">latex-project.org</a></em>
+</p>
+
+</main>
+</body>
+</html>

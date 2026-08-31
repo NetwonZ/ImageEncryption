@@ -1,10 +1,23 @@
-\documentclass{article}
-\usepackage{xeCJK}
+\documentclass{ctexart}
 
-\setCJKmainfont{SimSun} % 设置中文字体，SimSun 是宋体
+\usepackage{amsmath, amssymb}   % 数学公式
+\usepackage{graphicx}            % 图片
+\usepackage{booktabs}            % 三线表
+\usepackage[margin=2.5cm]{geometry}  % 页边距
+\usepackage{hyperref}            % 超链接
+\usepackage{cite}
+\title{一种基于新型Salomon耦合映射格的彩色图像加密技术}
+\author{张人元}
 
 \begin{document}
+\maketitle
 
-这是一个中文文本示例。
+\input{chapters/abstract}
+\input{chapters/ch01_intro}
+
+%参考文献
+\bibliographystyle{unsrt}  % 引用格式：plain/ieeetr/alpha/unsrt
+\bibliography{reference}     % 不带.bib后缀
+
 
 \end{document}
