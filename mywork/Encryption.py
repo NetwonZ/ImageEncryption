@@ -469,8 +469,9 @@ class Encrypter:
         *,
         global_permutation_method: str | None = None,
         user_key: str | None = None,
+        cml: SalomoncouplingCML | None = None,
     ) -> None:
-        from .KeyStream import normalize_user_key_v2,DEFAULT_USER_KEY_BITS
+        from .KeyStream import normalize_user_key_v2,DEFAULT_USER_KEY_BITS,DEFAULT_USER_KEY_BITS_V2
 
         self.config = config or EncryptionConfig()
         if global_permutation_method is not None:
@@ -478,11 +479,11 @@ class Encrypter:
                 self.config,
                 global_permutation_method=global_permutation_method,
             )
-        self._cml: SalomoncouplingCML | None = None
+        self._cml: SalomoncouplingCML | None = cml
         self._cml_source_array: np.ndarray | None = None
         self._cml_default_parameters: dict[str, float] | None = None
         self._user_key_snapshot: str | None = None
-        self.user_key = DEFAULT_USER_KEY_BITS
+        self.user_key = DEFAULT_USER_KEY_BITS_V2
         if key_source is not None:
             self._initialize_cml(key_source)
 

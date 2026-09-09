@@ -21,19 +21,19 @@
 \begin{equation}
 \left\{
 \begin{aligned}
-    \mu &= \bmod\left( \left\lfloor |\sin(4\pi \cdot V_1)| \times 10^6 \right\rfloor, 10 \right), \\
-    v &= \bmod\left( \left\lfloor |\sin(4\pi \cdot V_2)| \times 10^6 \right\rfloor, 10 \right), \\
-    \alpha &= \bmod\left( \left\lfloor |\sin(4\pi \cdot V_3)| \times 10^6 \right\rfloor, 10 \right), \\
-    \beta &= \bmod\left( \left\lfloor |\sin(4\pi \cdot V_4)| \times 10^6 \right\rfloor, 10 \right), \\
-    x_0 &= \bmod\left( |\sin(4\pi \cdot V_5)| \times 10^6, 1 \right),
+    \mu &= \bmod\left( |\sin(4\pi \cdot V_1)| \times 10^6,\; 10 \right), \\
+    v &= \bmod\left( |\sin(4\pi \cdot V_2)| \times 10^6,\; 10 \right), \\
+    \alpha &= \bmod\left( |\sin(4\pi \cdot V_3)| \times 10^6,\; 10 \right), \\
+    \beta &= \bmod\left( |\sin(4\pi \cdot V_4)| \times 10^6,\; 10 \right), \\
+    x_0 &= \bmod\left( |\sin(4\pi \cdot V_5)| \times 10^6,\; 1 \right),
 \end{aligned}
 \right.
 \end{equation}
-其中 $\lfloor \cdot \rfloor$ 为向下取整函数，$\bmod(z, 1) = z - \lfloor z \rfloor$ 表示取小数部分，使得初值 $x_0 \in (0, 1)$。将派生得到的初值 $x_0$ 和参数输入离散混沌系统：
+其中 $\bmod(z, m) = z - m\lfloor z/m \rfloor$ 表示对模 $m$ 取余（保留小数部分），故 $\mu, v, \alpha, \beta$ 为连续区间 $[0, 10)$ 内的实数而非整数，覆盖更广泛的混沌动力学区域；初值 $x_0 \in (0, 1)$。将派生得到的初值 $x_0$ 和参数输入离散混沌系统：
 \begin{equation}
     x_{t+1} = \left| \sin\left( (5 + 3\mu) \left( 1 - v \cdot x_t \cdot \sin\left( 15\pi x_t (1 - x_t) \right) \right) \right) \right|.
 \end{equation}
-为消除初始暂态效应，系统迭代前 $N_0$ 次被舍弃，继续收集后续 $L = M \times N$ 次迭代输出，构成最终的伪随机密钥流序列 $X = \{x_1, x_2, \dots, x_L\}$。该算法的完整执行过程如算法 1 所示。
+为消除初始暂态效应，系统迭代前 $N_0$ 次被舍弃，继续收集后续 $L = M \times N$ 次迭代输出。由于每次调用时 $x_0$ 与 $(\mu, v)$ 均由明文与外部密钥重新派生，得到的伪随机密钥流序列 $X = \{x_1, x_2, \dots, x_L\}$ 对明文与密钥均敏感。该算法的完整执行过程如算法 1 所示。
 
 \begin{algorithm}[htbp]
 \caption{Parameters and Keystream Generation}
@@ -50,11 +50,11 @@
     \STATE $S_E \leftarrow e_{9-i} \oplus e_{8-i} \oplus e_{7-i} \oplus e_{6-i}$;
     \STATE $V_i \leftarrow \frac{S_K + S_E}{2 \times 2^{48}}$;
 \ENDFOR
-\STATE $\mu \leftarrow \bmod\left( \lfloor |\sin(4\pi \cdot V_1)| \times 10^6 \rfloor, 10 \right)$;
-\STATE $v \leftarrow \bmod\left( \lfloor |\sin(4\pi \cdot V_2)| \times 10^6 \rfloor, 10 \right)$;
-\STATE $\alpha \leftarrow \bmod\left( \lfloor |\sin(4\pi \cdot V_3)| \times 10^6 \rfloor, 10 \right)$;
-\STATE $\beta \leftarrow \bmod\left( \lfloor |\sin(4\pi \cdot V_4)| \times 10^6 \rfloor, 10 \right)$;
-\STATE $x_0 \leftarrow \bmod\left( |\sin(4\pi \cdot V_5)| \times 10^6, 1 \right)$;
+\STATE $\mu \leftarrow \bmod\left( |\sin(4\pi \cdot V_1)| \times 10^6,\; 10 \right)$;
+\STATE $v \leftarrow \bmod\left( |\sin(4\pi \cdot V_2)| \times 10^6,\; 10 \right)$;
+\STATE $\alpha \leftarrow \bmod\left( |\sin(4\pi \cdot V_3)| \times 10^6,\; 10 \right)$;
+\STATE $\beta \leftarrow \bmod\left( |\sin(4\pi \cdot V_4)| \times 10^6,\; 10 \right)$;
+\STATE $x_0 \leftarrow \bmod\left( |\sin(4\pi \cdot V_5)| \times 10^6,\; 1 \right)$;
 \STATE $x \leftarrow x_0$;
 \FOR{$t = 1$ \TO $N_0 + L$}
     \STATE $x \leftarrow \left| \sin\left( (5 + 3\mu) \left( 1 - v \cdot x \cdot \sin(15\pi x (1 - x)) \right) \right) \right|$;

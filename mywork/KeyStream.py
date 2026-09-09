@@ -125,11 +125,13 @@ def _derive_chaos_parameters_v2(plaintext_bytes: bytes, user_key: str) -> dict[s
     folded = [mp.fabs(mp.sin(4 * mp.pi * value)) for value in normalized_values]
     scaled = [value * mp.power(10, 6) for value in folded]
     return {
-        "mu": mp.fmod(mp.floor(scaled[0]), 10),
-        "v": mp.fmod(mp.floor(scaled[1]), 10),
-        "alpha": mp.fmod(mp.floor(scaled[2]), 10),
-        "beta": mp.fmod(mp.floor(scaled[3]), 10),
-        "x": mp.frac(scaled[4]),
+        # mu, v, alpha, beta ∈ [0, 10) 连续值：仅做 mod 10，不取 floor
+        "mu": mp.fmod(scaled[0], 10),
+        "v": mp.fmod(scaled[1], 10),
+        "alpha": mp.fmod(scaled[2], 10),
+        "beta": mp.fmod(scaled[3], 10),
+        # x0 ∈ (0, 1)：mod 1 取小数部分
+        "x": mp.fmod(scaled[4], mp.mpf(1)),
     }
 
 

@@ -997,48 +997,39 @@ class Analysis:
         dpi: int = 300,
         use_reference_style: bool = True,
         add_panel_labels: bool = True,
-        export_panels: bool = False,
-        panel_dir: str | Path | None = None,
         font_family: str = "Times New Roman",
-    ) -> list[dict[str, Any]]:
-        """Compare histograms and optionally save one paper-style figure per image.
+        bar_alpha: float = 0.6,
+    ) -> dict[str, Any]:
+        """One figure, one row per image, with ciphertext histogram variance (HV).
 
-        With the default ``use_reference_style=True`` every test image produces
-        a figure laid out like the reference publication: the plaintext image
-        sits next to its histogram, followed by the encrypted image and its
-        histogram, all four panels in a single row. X-axis pixel-value ticks
-        fall at ``0, 45, ..., 255``, a light dashed grid is drawn behind the
-        bars, and all text uses the ``font_family`` serif face (Times New
-        Roman by default, with STIX math). Grayscale histograms are drawn in
-        light gray for the plaintext image and dark gray for the encrypted
-        image, while color images overlay the red, green, and blue channel
-        histograms exactly like the reference figure. Combined figures are
-        saved as ``<image-stem>_histogram.png`` below ``save_dir`` when
-        ``plot=True``. With ``use_reference_style=False`` the previous layout
-        is kept (two rows, one histogram axis per channel, no grid).
+        Every test image occupies one row: for color images the row contains the
+        plaintext image, the plaintext histogram, the ciphertext image, and the
+        ciphertext histogram; grayscale adds per-channel histogram columns. Each
+        ciphertext histogram panel is annotated with its per-channel histogram
+        variance
 
-        ``add_panel_labels`` (default on) captions every subplot with the
-        ``(a)``, ``(b)``, ``(c)``, ``(d)`` markers in the same serif face as
-        the reference. ``export_panels`` (default off) additionally renders
-        every panel as its own figure and saves it as
-        ``<image-stem>_<panel>.png`` below ``panel_dir`` (which defaults to
-        ``<save_dir>/histogram_panels``).
+        .. math:: HV = (1/256) * sum_k (h_k - mean(h))^2,
+
+        where ``h_k`` is the frequency of pixel value ``k``. Lower HV means a
+        more uniform ciphertext histogram. All panel labels ``(a)``, ``(b)``,
+        ``(c)``, ... are drawn with ``set_xlabel`` at the same axes-relative
+        position on every axis, so the bottom labels of every column line up on
+        the same baseline. ``bar_alpha`` controls the transparency of the
+        histogram bars so overlapping channel histograms stay readable.
+        The single combined figure is saved as ``histogram_grid.png`` below
+        ``save_dir``. Per-channel HV values are returned in
+        ``rows[i]["encrypted_hv"]`` and printed as a table.
         """
         if not isinstance(dpi, int) or dpi <= 0:
             raise ValueError("dpi must be a positive integer")
         if not isinstance(font_family, str) or not font_family.strip():
             raise ValueError("font_family must be a non-empty string")
+        if not 0.0 < bar_alpha <= 1.0:
+            raise ValueError("bar_alpha must be in the interval (0, 1]")
 
         output_dir = None
         if save_dir is not None:
             output_dir = Path(save_dir).expanduser().resolve()
-        panel_output_dir = None
-        if export_panels:
-            panel_output_dir = (
-                Path(panel_dir).expanduser().resolve()
-                if panel_dir is not None
-                else (output_dir or Path.cwd()) / "histogram_panels"
-            )
 
         reference_rc = {
             "font.family": "serif",
@@ -1053,7 +1044,10 @@ class Analysis:
         original_colors = {"Gray": "#9c9c9c", "R": "#d84a4a", "G": "#3f9e52", "B": "#3a5f8f"}
         encrypted_colors = {"Gray": "#4d4d4d", "R": "#932525", "G": "#21612f", "B": "#1f3153"}
         pixel_ticks = [0, 45, 90, 135, 180, 225, 255]
-        used_output_names: set[str] = set()
+
+        def _histogram_variance(histogram: np.ndarray) -> float:
+            counts = histogram.astype(np.float64)
+            return float(np.mean((counts - counts.mean()) ** 2))
 
         def channel_histograms(image: np.ndarray) -> list[tuple[str, np.ndarray]]:
             return list(self._histograms(image).items())
@@ -1063,18 +1057,22 @@ class Analysis:
                 axis.imshow(image, cmap="gray", vmin=0, vmax=255)
             else:
                 axis.imshow(image)
-            axis.axis("off")
+            # Keep the axes box visible so set_xlabel can anchor the caption
+            # instead of switching the axis off entirely.
+            axis.set_xticks([])
+            axis.set_yticks([])
+            for spine in axis.spines.values():
+                spine.set_visible(False)
 
-        def draw_histogram_panel(axis, channels: list, *, encrypted: bool) -> None:
+        def draw_histogram_panel(axis, channels: list, *, encrypted: bool) -> float:
             palette = encrypted_colors if encrypted else original_colors
-            alpha = 0.9 if len(channels) > 1 else 1.0
             for channel_name, histogram in channels:
                 axis.hist(
                     np.arange(256),
                     bins=np.arange(257),
                     weights=histogram,
                     color=palette[channel_name],
-                    alpha=alpha,
+                    alpha=bar_alpha,
                     linewidth=0,
                 )
             axis.set_xlim(0, 255)
@@ -1089,29 +1087,32 @@ class Analysis:
                     spine.set_color("0.35")
             else:
                 axis.grid(False)
+            if encrypted:
+                return {channel_name: _histogram_variance(histogram) for channel_name, histogram in channels}
+            return None
 
-        def draw_panel(axis, panel: Panel) -> None:
+        def draw_panel(axis, panel: Panel) -> dict[str, float] | None:
             _, image, channels, encrypted = panel
             if image is not None:
                 draw_image_panel(axis, image)
-            else:
-                draw_histogram_panel(axis, channels, encrypted=encrypted)
+                return None
+            return draw_histogram_panel(axis, channels, encrypted=encrypted)
 
-        def label_panel(axis, panel: Panel, label: str) -> None:
-            if panel[1] is not None:
-                # Image panels have their axis switched off, so captions are
-                # drawn as free-floating text below the image instead.
-                axis.text(
-                    0.5,
-                    -0.05,
-                    label,
-                    transform=axis.transAxes,
-                    ha="center",
-                    va="top",
-                    fontsize=11,
-                )
-            else:
-                axis.set_xlabel(label, labelpad=6)
+        def label_panel(axis, label: str) -> None:
+            # set_xlabel anchors the caption below every panel at the same
+            # axes-relative position, so all labels share one horizontal
+            # baseline even when the last row has tick labels and the rows
+            # above do not.
+            axis.set_xlabel(label, labelpad=6, fontsize=11)
+
+        def panel_label(index: int) -> str:
+            # (a) ... (z), (aa) ... (az), (ba) ... spreadsheet-style letters.
+            letters = ""
+            index += 1
+            while index:
+                index, remainder = divmod(index - 1, 26)
+                letters = chr(ord("a") + remainder) + letters
+            return f"({letters})"
 
         def build_sequence(
             original: np.ndarray,
@@ -1138,159 +1139,142 @@ class Analysis:
                 *expand("encrypted_histogram", encrypted_channels, True),
             ]
 
-        def plot_combined(sequence: list[Panel], output_name: str) -> tuple[Any, str | None]:
-            # Reference style keeps one image's four panels in a single row,
-            # matching the publication figure.
-            if use_reference_style:
-                rows_spec = [sequence]
-            else:
-                rows_spec = [
-                    [panel for panel in sequence if not panel[3]],
-                    [panel for panel in sequence if panel[3]],
-                ]
-            column_count = max(len(row) for row in rows_spec)
-            figure, axes = plt.subplots(
-                len(rows_spec),
-                column_count,
-                figsize=(2.55 * column_count, 2.6 * len(rows_spec)),
-                squeeze=False,
-                constrained_layout=True,
+        # One combined figure for every test image; each row shows one image's
+        # plaintext/ciphertext pair plus their histograms. HV for every
+        # ciphertext channel is computed directly from the histogram counts,
+        # independent of whether the figure is drawn.
+        runs = self._runs()
+        row_specs: list[tuple[Any, list[Panel], dict[str, float]]] = []
+        for run in runs:
+            encrypted_hv = {
+                channel: _histogram_variance(counts)
+                for channel, counts in self._histograms(run.encrypted).items()
+            }
+            encrypted_hv["average"] = float(
+                np.mean([value for channel, value in encrypted_hv.items() if channel != "average"])
             )
-            drawn_panels: list[tuple[Any, Panel]] = []
-            for row_index, row in enumerate(rows_spec):
-                for column_index, panel in enumerate(row):
-                    axis = axes[row_index, column_index]
-                    draw_panel(axis, panel)
-                    drawn_panels.append((axis, panel))
-                for column_index in range(len(row), column_count):
-                    axes[row_index, column_index].axis("off")
-            if add_panel_labels:
-                for panel_index, (axis, panel) in enumerate(drawn_panels):
-                    label_panel(axis, panel, f"({chr(ord('a') + panel_index)})")
+            sequence = build_sequence(
+                run.original,
+                run.encrypted,
+                channel_histograms(run.original),
+                channel_histograms(run.encrypted),
+            )
+            row_specs.append((run, sequence, encrypted_hv))
 
-            saved_path = None
-            if output_dir is not None:
-                output_dir.mkdir(parents=True, exist_ok=True)
-                candidate = output_dir / output_name
-                figure.savefig(
-                    candidate,
-                    dpi=dpi,
-                    bbox_inches="tight",
-                    pad_inches=0.12,
-                    facecolor="white",
-                )
-                saved_path = str(candidate)
-
-            if show:
-                plt.show()
-            return figure, saved_path
-
-        def export_panel_figures(image_stem: str, sequence: list[Panel]) -> list[dict[str, Any]]:
-            exported: list[dict[str, Any]] = []
-            if panel_output_dir is None:
-                return exported
-            panel_output_dir.mkdir(parents=True, exist_ok=True)
-            for panel_index, panel in enumerate(sequence):
-                label = f"({chr(ord('a') + panel_index)})"
-                output_name = f"{image_stem}_{panel[0]}.png"
-                suffix = 2
-                while output_name in used_output_names:
-                    output_name = f"{image_stem}_{panel[0]}_{suffix}.png"
-                    suffix += 1
-                used_output_names.add(output_name)
-                figure, axis = plt.subplots(
-                    1,
-                    1,
-                    figsize=(2.6, 2.4),
+        figure = None
+        axes = None
+        saved_path: str | None = None
+        if plot:
+            column_count = max(len(sequence) for _, sequence, _ in row_specs)
+            # X tick labels are only needed on the bottom row; hiding them
+            # above keeps every row the same height so the (a), (b), (c), ...
+            # captions of all rows line up on the same baseline.
+            with plt.rc_context(reference_rc if use_reference_style else {}):
+                figure, axes = plt.subplots(
+                    len(row_specs),
+                    column_count,
+                    figsize=(2.55 * column_count, 2.6 * len(row_specs)),
+                    squeeze=False,
                     constrained_layout=True,
                 )
-                draw_panel(axis, panel)
-                if add_panel_labels:
-                    label_panel(axis, panel, label)
-                candidate = panel_output_dir / output_name
-                figure.savefig(
-                    candidate,
-                    dpi=dpi,
-                    bbox_inches="tight",
-                    pad_inches=0.08,
-                    facecolor="white",
-                )
-                exported.append({"panel": panel[0], "label": label, "path": str(candidate)})
-                if not show:
-                    plt.close(figure)
-            return exported
+                panel_index = 0
+                for row_index, (run, sequence, _) in enumerate(row_specs):
+                    bottom_row = row_index == len(row_specs) - 1
+                    for column_index, panel in enumerate(sequence):
+                        axis = axes[row_index, column_index]
+                        if not bottom_row and panel[1] is None:
+                            axis.tick_params(axis="x", labelbottom=False)
+                        panel_hv = draw_panel(axis, panel)
+                        if panel_hv:
+                            if len(panel_hv) == 1:
+                                hv_text = f"HV = {next(iter(panel_hv.values())):.1f}"
+                            else:
+                                hv_text = "\n".join(
+                                    f"HV$_{{{channel}}}$ = {value:.1f}"
+                                    for channel, value in panel_hv.items()
+                                )
+                            axis.text(
+                                0.97,
+                                0.95,
+                                hv_text,
+                                transform=axis.transAxes,
+                                ha="right",
+                                va="top",
+                                fontsize=8,
+                                bbox={
+                                    "facecolor": "white",
+                                    "alpha": 0.75,
+                                    "edgecolor": "none",
+                                    "pad": 1.5,
+                                },
+                            )
+                        if add_panel_labels:
+                            label_panel(axis, panel_label(panel_index))
+                        panel_index += 1
+                    for column_index in range(len(sequence), column_count):
+                        axes[row_index, column_index].axis("off")
+                if output_dir is not None:
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    candidate = output_dir / "histogram_grid.png"
+                    figure.savefig(
+                        candidate,
+                        dpi=dpi,
+                        bbox_inches="tight",
+                        pad_inches=0.12,
+                        facecolor="white",
+                    )
+                    saved_path = str(candidate)
+                if show:
+                    plt.show()
 
-        results = []
-        for run in self._runs():
-            figures = None
-            figure = None
-            saved_path = None
-            exported_panels: list[dict[str, Any]] = []
-            if plot:
-                # One independent reference-style analysis figure per test image.
-                image_stem = run.image_path.stem
-                base_name = f"{image_stem}_histogram.png"
-                output_name = base_name
-                suffix = 2
-                while output_name in used_output_names:
-                    output_name = f"{image_stem}_histogram_{suffix}.png"
-                    suffix += 1
-                used_output_names.add(output_name)
-                sequence = build_sequence(
-                    run.original,
-                    run.encrypted,
-                    channel_histograms(run.original),
-                    channel_histograms(run.encrypted),
-                )
-                with plt.rc_context(reference_rc if use_reference_style else {}):
-                    figure, saved_path = plot_combined(sequence, output_name)
-                    if export_panels:
-                        exported_panels = export_panel_figures(image_stem, sequence)
-                figures = {"comparison": figure}
+        results: list[dict[str, Any]] = []
+        for run, _, encrypted_hv in row_specs:
             results.append(
                 {
                     "image": str(run.image_path),
                     "original": self._histograms(run.original),
                     "encrypted": self._histograms(run.encrypted),
                     "decrypted": self._histograms(run.decrypted),
-                    "figures": figures,
+                    "encrypted_hv": encrypted_hv,
                     "figure": figure,
                     "save_path": saved_path,
-                    "panels": exported_panels,
                     "exact_recovery": bool(np.array_equal(run.original, run.decrypted)),
                 }
             )
 
         if print_result:
             self._print_heading("Histogram analysis")
-            table_rows: list[tuple[Any, ...]] = []
-            for result in results:
-                channel_cvs = {
-                    channel: float(counts.std() / counts.mean())
-                    for channel, counts in result["encrypted"].items()
-                }
-                for channel, coefficient_of_variation in channel_cvs.items():
-                    table_rows.append(
-                        (
-                            Path(result["image"]).name,
-                            channel,
-                            self._format_number(coefficient_of_variation),
-                            self._yes_no(result["exact_recovery"]),
-                        )
-                    )
-                table_rows.append(
+            channel_order = [
+                channel
+                for channel in ("R", "G", "B", "Gray")
+                if any(channel in result["encrypted_hv"] for result in results)
+            ]
+            _print_ascii_table(
+                (
+                    "Image",
+                    *(f"{channel} HV" for channel in channel_order),
+                    "Average HV",
+                    "Exact Recovery",
+                ),
+                [
                     (
                         Path(result["image"]).name,
-                        "Average",
-                        self._format_number(float(np.mean(list(channel_cvs.values())))),
+                        *(
+                            self._format_number(result["encrypted_hv"].get(channel), 2)
+                            for channel in channel_order
+                        ),
+                        self._format_number(result["encrypted_hv"]["average"], 2),
                         self._yes_no(result["exact_recovery"]),
                     )
-                )
-            _print_ascii_table(
-                ("Image", "Channel", "Encrypted Histogram CV", "Exact Recovery"),
-                table_rows,
+                    for result in results
+                ],
             )
-        return results
+        return {
+            "figure": figure,
+            "axes": axes,
+            "rows": results,
+            "save_path": saved_path,
+        }
 
     def test_entropy(self, *, print_result: bool = True) -> list[dict[str, Any]]:
         """Calculate Shannon entropy; encrypted-channel values should approach 8."""
@@ -2610,12 +2594,12 @@ if __name__ == "__main__":
                         r"C:\ImageEncryption\images\img1.png",
                         r"C:\ImageEncryption\images\img2.png",
                         r"C:\ImageEncryption\images\img3.png",
-                        # r"C:\ImageEncryption\images\img4.png",
-                        # r"C:\ImageEncryption\images\img5.png",
-                        # r"C:\ImageEncryption\images\img6.png",
+                        r"C:\ImageEncryption\images\img4.png",
+                        r"C:\ImageEncryption\images\img5.png",
+                        r"C:\ImageEncryption\images\img6.png",
                         r"C:\ImageEncryption\images\img7.png",
                         ])
-    result = analysis.encryption_decryption_test(show=True)
+    # result = analysis.encryption_decryption_test(show=True)
     #卡方检验 global_parallel_size居然会影响卡方检验的结果，取64不错
     # analysis.chi_square_test()
     #直方图

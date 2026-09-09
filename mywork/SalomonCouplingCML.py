@@ -158,17 +158,17 @@ class SalomoncouplingCML:
 
 
 		if user_key is None:
-			# from .KeyStream import DEFAULT_USER_KEY_BITS_V2
-			# user_key = DEFAULT_USER_KEY_BITS_V2
+			from .KeyStream import DEFAULT_USER_KEY_BITS_V2
+			user_key = DEFAULT_USER_KEY_BITS_V2
 
-			from .KeyStream import DEFAULT_USER_KEY_BITS
-			user_key = DEFAULT_USER_KEY_BITS
+			# from .KeyStream import DEFAULT_USER_KEY_BITS
+			# user_key = DEFAULT_USER_KEY_BITS
      
 		if image_path is not None:
 			from .KeyStream import keystream_generation_v2,keystream_generation
 			st = time.perf_counter()
-			# key = keystream_generation_v2(L, image_path, user_key)
-			key = keystream_generation(L,image_path,user_key)
+			key = keystream_generation_v2(L, image_path, user_key)
+			# key = keystream_generation(L,image_path,user_key)
 			self.L = int(L)
 			self.mu = float(key["mu"])
 			self.v = float(key["v"])
