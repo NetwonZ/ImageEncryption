@@ -17,6 +17,28 @@ _IMAGE_HASH_HOOK: ContextVar[
     Callable[[np.ndarray], None] | None
 ] = ContextVar("image_hash_hook", default=None)
 
+# 默认用户密钥 (256 位二进制串)。固定常量, Python 与 MATLAB 共用,
+# 保证相同密钥 + 相同图像得到确定性的加密结果。
+DEFAULT_USER_KEY_BITS = (
+    "1111001111110100100100100100100111011100001010001111111110010000"
+    "1010010110101110110001111001011110000011000001101101000000111011"
+    "1111001110001011001011111111110010000000101001001101111101011010"
+    "0101000111001001101111000111000000011110011111101010010000011001"
+)
+assert len(DEFAULT_USER_KEY_BITS) == 256
+
+# V2 默认外部密钥（384 位二进制串）。V2 与旧版密钥相互独立，避免改变
+# keystream_generation() 的既有行为。
+DEFAULT_USER_KEY_BITS_V2 = (
+    "1110010100010010000101001000001000111001001010010010110100100010"
+    "1110001001010101101011001100101100011010010001100110100010000100"
+    "1111001111110100100100100100100111011100001010001111111110010000"
+    "1010010110101110110001111001011110000011000001101101000000111011"
+    "1111001110001011001011111111110010000000101001001101111101011010"
+    "0101000111001001101111000111000000011110011111101010010000011001"
+)
+assert len(DEFAULT_USER_KEY_BITS_V2) == 384
+
 # 使用高精度浮点，避免在中间迭代阶段过早退化到双精度
 mp.mp.dps = 80
 
@@ -31,6 +53,84 @@ def _parse_user_key_bits(user_key: str) -> np.ndarray:
         raise ValueError("user_key must contain only '0' and '1'")
 
     return np.fromiter((int(bit) for bit in user_key), dtype=np.uint8, count=256)
+
+
+def normalize_user_key_v2(user_key: str | None) -> str:
+    """Return a validated 384-bit V2 user key, applying the default if needed."""
+    if user_key is None:
+        return DEFAULT_USER_KEY_BITS_V2
+    if not isinstance(user_key, str):
+        raise TypeError("user_key must be a 384-character binary string")
+    if len(user_key) != 384:
+        raise ValueError("user_key must contain exactly 384 bits")
+    if any(bit not in "01" for bit in user_key):
+        raise ValueError("user_key must contain only '0' and '1'")
+    return user_key
+
+
+def _plaintext_bytes(plaintext_image: str | Path | np.ndarray) -> bytes:
+    """Serialize a path or ndarray exactly as the existing generator does."""
+    if isinstance(plaintext_image, (str, Path)):
+        image_path = Path(plaintext_image)
+        if not image_path.is_file():
+            raise FileNotFoundError(f"Plaintext image not found: {image_path}")
+        plaintext_bytes = image_path.read_bytes()
+        if not plaintext_bytes:
+            raise ValueError(f"Plaintext image is empty: {image_path}")
+        return plaintext_bytes
+
+    image_array = np.ascontiguousarray(np.asarray(plaintext_image))
+    if image_array.size == 0:
+        raise ValueError("Plaintext image array is empty")
+    array_header = f"shape={image_array.shape};dtype={image_array.dtype.str};".encode("ascii")
+    return array_header + image_array.tobytes(order="C")
+
+
+def _xor_48_bit_blocks(blocks: list[int]) -> int:
+    value = 0
+    for block in blocks:
+        value ^= block
+    return value
+
+
+def _derive_chaos_parameters_v2(plaintext_bytes: bytes, user_key: str) -> dict[str, mpf]:
+    """Derive V2 parameters using SHA-384 and bidirectional 48-bit windows."""
+    digest = hashlib.sha384(plaintext_bytes).digest()
+    image_hash_bits = np.unpackbits(np.frombuffer(digest, dtype=np.uint8))
+    hook = _IMAGE_HASH_HOOK.get()
+    if hook is not None:
+        hook(image_hash_bits.copy())
+
+    internal_blocks = [
+        int.from_bytes(digest[offset:offset + 6], byteorder="big")
+        for offset in range(0, len(digest), 6)
+    ]
+    external_blocks = [
+        int(user_key[offset:offset + 48], 2)
+        for offset in range(0, len(user_key), 48)
+    ]
+
+    denominator = mp.mpf(2) * mp.power(2, 48)
+    normalized_values: list[mpf] = []
+    for index in range(5):
+        internal_mix = _xor_48_bit_blocks(internal_blocks[index:index + 4])
+        external_start = 4 - index
+        external_mix = _xor_48_bit_blocks(
+            external_blocks[external_start:external_start + 4]
+        )
+        normalized_values.append(
+            (mp.mpf(internal_mix) + mp.mpf(external_mix)) / denominator
+        )
+
+    folded = [mp.fabs(mp.sin(4 * mp.pi * value)) for value in normalized_values]
+    scaled = [value * mp.power(10, 6) for value in folded]
+    return {
+        "mu": mp.fmod(mp.floor(scaled[0]), 10),
+        "v": mp.fmod(mp.floor(scaled[1]), 10),
+        "alpha": mp.fmod(mp.floor(scaled[2]), 10),
+        "beta": mp.fmod(mp.floor(scaled[3]), 10),
+        "x": mp.frac(scaled[4]),
+    }
 
 
 def _derive_chaos_parameters(plaintext_bytes: bytes, user_key: str) -> dict[str, mpf]:
@@ -179,7 +279,7 @@ def _finalize_output(params: dict[str, mpf], sequence: list[mpf] | np.ndarray) -
 def keystream_generation(
     L: int,
     plaintext_image: str | Path | np.ndarray,
-    user_key: str,
+    user_key: str | None = None,
     *,
     use_high_precision: bool = False,
 ) -> dict[str, float | np.ndarray]:
@@ -190,11 +290,15 @@ def keystream_generation(
     其中 X 为长度为 L 的随机数序列，x 仅作为内部初值使用。
 
     参数：
+        user_key 为 256 位二进制字符串；为 None 时使用模块级
+        DEFAULT_USER_KEY_BITS 固定密钥（Python 与 MATLAB 共用）。
         use_high_precision=False 时使用轻量级 float 迭代；
         use_high_precision=True 时使用高精度 mp 迭代。
     """
     if not isinstance(L, (int, np.integer)) or L <= 0:
         raise ValueError("L must be a positive integer")
+    if user_key is None:
+        user_key = DEFAULT_USER_KEY_BITS
 
     if isinstance(plaintext_image, (str, Path)):
         image_path = Path(plaintext_image)
@@ -232,27 +336,75 @@ def keystream_generation(
     return _finalize_output(params, sequence)
 
 
-# --- 实验验证 ---
-if __name__ == "__main__":
-    sample_path = Path(r"C:\ImageEncryption\images\img2.png")
-    if sample_path.is_file():
-        import time
-        seed = 2026
-        random.seed(seed)
-        binary_key_str = format(random.getrandbits(256), "0256b")
-        hex_key = f"{int(binary_key_str, 2):064x}"
-        print(hex_key)
+def keystream_generation_v2(
+    L: int,
+    plaintext_image: str | Path | np.ndarray,
+    user_key: str | None = None,
+    *,
+    warmup: int = 50,
+    use_high_precision: bool = False,
+) -> dict[str, float | np.ndarray]:
+    """Generate the SHA-384/V2 chaotic parameters and keystream from ch03.tex.
 
-        user_key = binary_key_str
-        st = time.time()
-        result = keystream_generation(512 * 512, sample_path, user_key)
-        et = time.time()
-        print(f"Time taken: {et - st:.6f} seconds")
-        print("====== 混沌参数与随机数序列输出 ======")
-        for key in ("mu", "v", "alpha", "beta"):
-            print(f"{key:<6}: {result[key]:.30f}")
-        print(f"X len : {len(result['X'])}")
-        print(f"X head: {np.array2string(result['X'][:10], precision=8, separator=', ')}")
-        
+    ``user_key`` is a 384-bit binary string. The SHA-384 digest and user key are
+    split into eight 48-bit blocks, mixed with opposing four-block windows, and
+    folded into ``mu``, ``v``, ``alpha``, ``beta``, and ``x0``.
+    """
+    if not isinstance(L, (int, np.integer)) or L <= 0:
+        raise ValueError("L must be a positive integer")
+    _validate_iteration_inputs(int(L), warmup)
+    normalized_user_key = normalize_user_key_v2(user_key)
+    plaintext_bytes = _plaintext_bytes(plaintext_image)
+    params = _derive_chaos_parameters_v2(plaintext_bytes, normalized_user_key)
+
+    if use_high_precision:
+        sequence = _iterate_keystream_mp(
+            x0=params["x"],
+            mu=params["mu"],
+            v=params["v"],
+            L=int(L),
+            warmup=warmup,
+        )
     else:
-        print(f"Sample image not found: {sample_path}")
+        sequence = _iterate_keystream_float(
+            x0=float(params["x"]),
+            mu=float(params["mu"]),
+            v=float(params["v"]),
+            L=int(L),
+            warmup=warmup,
+        )
+
+    result = _finalize_output(params, sequence)
+    result["x0"] = float(params["x"])
+    return result
+
+
+# Keep a spelling with an explicit capital V2 for callers following the paper's
+# naming while using PEP 8 naming internally.
+keystream_generation_V2 = keystream_generation_v2
+
+
+# --- 实验验证 ---
+# if __name__ == "__main__":
+#     sample_path = Path(r"C:\ImageEncryption\images\img2.png")
+#     if sample_path.is_file():
+#         import time
+#         seed = 2026
+#         random.seed(seed)
+#         binary_key_str = format(random.getrandbits(256), "0256b")
+#         hex_key = f"{int(binary_key_str, 2):064x}"
+#         print(hex_key)
+
+#         user_key = binary_key_str
+#         st = time.time()
+#         result = keystream_generation(512 * 512, sample_path, user_key)
+#         et = time.time()
+#         print(f"Time taken: {et - st:.6f} seconds")
+#         print("====== 混沌参数与随机数序列输出 ======")
+#         for key in ("mu", "v", "alpha", "beta"):
+#             print(f"{key:<6}: {result[key]:.30f}")
+#         print(f"X len : {len(result['X'])}")
+#         print(f"X head: {np.array2string(result['X'][:10], precision=8, separator=', ')}")
+        
+#     else:
+#         print(f"Sample image not found: {sample_path}")

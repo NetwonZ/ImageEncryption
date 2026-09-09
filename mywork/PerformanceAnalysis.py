@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 import time
-from typing import Any, Callable, Mapping, Union
+from typing import Any, Callable, Mapping, TypeAlias, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,6 +11,10 @@ import PIL.Image as pil_image
 
 ImageInput = Union[str, Path, np.ndarray, pil_image.Image]
 CryptFunction = Callable[..., Any]
+
+# One drawable histogram-analysis panel: (name, image, channels, is_encrypted).
+# Exactly one of ``image``/``channels`` is populated per panel.
+Panel: TypeAlias = tuple[str, np.ndarray | None, list | None, bool]
 
 _DIRECTIONS = {
     "horizontal": (0, 1),
@@ -986,27 +990,263 @@ class Analysis:
     def test_histogram(
         self,
         *,
-        plot: bool = False,
+        plot: bool = True,
         show: bool = False,
         print_result: bool = True,
+        save_dir: str | Path | None = Path(__file__).resolve().parent / "figures",
+        dpi: int = 300,
+        use_reference_style: bool = True,
+        add_panel_labels: bool = True,
+        export_panels: bool = False,
+        panel_dir: str | Path | None = None,
+        font_family: str = "Times New Roman",
     ) -> list[dict[str, Any]]:
-        """Compare original, encrypted, and decrypted 256-bin histograms."""
+        """Compare histograms and optionally save one paper-style figure per image.
+
+        With the default ``use_reference_style=True`` every test image produces
+        a figure laid out like the reference publication: the plaintext image
+        sits next to its histogram, followed by the encrypted image and its
+        histogram, all four panels in a single row. X-axis pixel-value ticks
+        fall at ``0, 45, ..., 255``, a light dashed grid is drawn behind the
+        bars, and all text uses the ``font_family`` serif face (Times New
+        Roman by default, with STIX math). Grayscale histograms are drawn in
+        light gray for the plaintext image and dark gray for the encrypted
+        image, while color images overlay the red, green, and blue channel
+        histograms exactly like the reference figure. Combined figures are
+        saved as ``<image-stem>_histogram.png`` below ``save_dir`` when
+        ``plot=True``. With ``use_reference_style=False`` the previous layout
+        is kept (two rows, one histogram axis per channel, no grid).
+
+        ``add_panel_labels`` (default on) captions every subplot with the
+        ``(a)``, ``(b)``, ``(c)``, ``(d)`` markers in the same serif face as
+        the reference. ``export_panels`` (default off) additionally renders
+        every panel as its own figure and saves it as
+        ``<image-stem>_<panel>.png`` below ``panel_dir`` (which defaults to
+        ``<save_dir>/histogram_panels``).
+        """
+        if not isinstance(dpi, int) or dpi <= 0:
+            raise ValueError("dpi must be a positive integer")
+        if not isinstance(font_family, str) or not font_family.strip():
+            raise ValueError("font_family must be a non-empty string")
+
+        output_dir = None
+        if save_dir is not None:
+            output_dir = Path(save_dir).expanduser().resolve()
+        panel_output_dir = None
+        if export_panels:
+            panel_output_dir = (
+                Path(panel_dir).expanduser().resolve()
+                if panel_dir is not None
+                else (output_dir or Path.cwd()) / "histogram_panels"
+            )
+
+        reference_rc = {
+            "font.family": "serif",
+            "font.serif": [font_family.strip(), "DejaVu Serif"],
+            "mathtext.fontset": "stix",
+            "axes.grid": True,
+            "axes.labelsize": 11,
+            "grid.color": "#d4d4d4",
+            "grid.linestyle": "--",
+            "grid.linewidth": 0.5,
+        }
+        original_colors = {"Gray": "#9c9c9c", "R": "#d84a4a", "G": "#3f9e52", "B": "#3a5f8f"}
+        encrypted_colors = {"Gray": "#4d4d4d", "R": "#932525", "G": "#21612f", "B": "#1f3153"}
+        pixel_ticks = [0, 45, 90, 135, 180, 225, 255]
+        used_output_names: set[str] = set()
+
+        def channel_histograms(image: np.ndarray) -> list[tuple[str, np.ndarray]]:
+            return list(self._histograms(image).items())
+
+        def draw_image_panel(axis, image: np.ndarray) -> None:
+            if image.ndim == 2:
+                axis.imshow(image, cmap="gray", vmin=0, vmax=255)
+            else:
+                axis.imshow(image)
+            axis.axis("off")
+
+        def draw_histogram_panel(axis, channels: list, *, encrypted: bool) -> None:
+            palette = encrypted_colors if encrypted else original_colors
+            alpha = 0.9 if len(channels) > 1 else 1.0
+            for channel_name, histogram in channels:
+                axis.hist(
+                    np.arange(256),
+                    bins=np.arange(257),
+                    weights=histogram,
+                    color=palette[channel_name],
+                    alpha=alpha,
+                    linewidth=0,
+                )
+            axis.set_xlim(0, 255)
+            axis.set_ylim(bottom=0)
+            axis.set_xticks(pixel_ticks)
+            axis.tick_params(axis="both", labelsize=7, pad=1)
+            if use_reference_style:
+                axis.set_axisbelow(True)
+                axis.grid(True)
+                for spine in axis.spines.values():
+                    spine.set_linewidth(0.6)
+                    spine.set_color("0.35")
+            else:
+                axis.grid(False)
+
+        def draw_panel(axis, panel: Panel) -> None:
+            _, image, channels, encrypted = panel
+            if image is not None:
+                draw_image_panel(axis, image)
+            else:
+                draw_histogram_panel(axis, channels, encrypted=encrypted)
+
+        def label_panel(axis, panel: Panel, label: str) -> None:
+            if panel[1] is not None:
+                # Image panels have their axis switched off, so captions are
+                # drawn as free-floating text below the image instead.
+                axis.text(
+                    0.5,
+                    -0.05,
+                    label,
+                    transform=axis.transAxes,
+                    ha="center",
+                    va="top",
+                    fontsize=11,
+                )
+            else:
+                axis.set_xlabel(label, labelpad=6)
+
+        def build_sequence(
+            original: np.ndarray,
+            encrypted: np.ndarray,
+            original_channels: list[tuple[str, np.ndarray]],
+            encrypted_channels: list[tuple[str, np.ndarray]],
+        ) -> list[Panel]:
+            def expand(
+                prefix: str,
+                channels: list[tuple[str, np.ndarray]],
+                encrypted_flag: bool,
+            ) -> list[Panel]:
+                if use_reference_style or len(channels) == 1:
+                    return [(prefix, None, channels, encrypted_flag)]
+                return [
+                    (f"{prefix}_{channel_name}", None, [(channel_name, histogram)], encrypted_flag)
+                    for channel_name, histogram in channels
+                ]
+
+            return [
+                ("original_image", original, None, False),
+                *expand("original_histogram", original_channels, False),
+                ("encrypted_image", encrypted, None, True),
+                *expand("encrypted_histogram", encrypted_channels, True),
+            ]
+
+        def plot_combined(sequence: list[Panel], output_name: str) -> tuple[Any, str | None]:
+            # Reference style keeps one image's four panels in a single row,
+            # matching the publication figure.
+            if use_reference_style:
+                rows_spec = [sequence]
+            else:
+                rows_spec = [
+                    [panel for panel in sequence if not panel[3]],
+                    [panel for panel in sequence if panel[3]],
+                ]
+            column_count = max(len(row) for row in rows_spec)
+            figure, axes = plt.subplots(
+                len(rows_spec),
+                column_count,
+                figsize=(2.55 * column_count, 2.6 * len(rows_spec)),
+                squeeze=False,
+                constrained_layout=True,
+            )
+            drawn_panels: list[tuple[Any, Panel]] = []
+            for row_index, row in enumerate(rows_spec):
+                for column_index, panel in enumerate(row):
+                    axis = axes[row_index, column_index]
+                    draw_panel(axis, panel)
+                    drawn_panels.append((axis, panel))
+                for column_index in range(len(row), column_count):
+                    axes[row_index, column_index].axis("off")
+            if add_panel_labels:
+                for panel_index, (axis, panel) in enumerate(drawn_panels):
+                    label_panel(axis, panel, f"({chr(ord('a') + panel_index)})")
+
+            saved_path = None
+            if output_dir is not None:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                candidate = output_dir / output_name
+                figure.savefig(
+                    candidate,
+                    dpi=dpi,
+                    bbox_inches="tight",
+                    pad_inches=0.12,
+                    facecolor="white",
+                )
+                saved_path = str(candidate)
+
+            if show:
+                plt.show()
+            return figure, saved_path
+
+        def export_panel_figures(image_stem: str, sequence: list[Panel]) -> list[dict[str, Any]]:
+            exported: list[dict[str, Any]] = []
+            if panel_output_dir is None:
+                return exported
+            panel_output_dir.mkdir(parents=True, exist_ok=True)
+            for panel_index, panel in enumerate(sequence):
+                label = f"({chr(ord('a') + panel_index)})"
+                output_name = f"{image_stem}_{panel[0]}.png"
+                suffix = 2
+                while output_name in used_output_names:
+                    output_name = f"{image_stem}_{panel[0]}_{suffix}.png"
+                    suffix += 1
+                used_output_names.add(output_name)
+                figure, axis = plt.subplots(
+                    1,
+                    1,
+                    figsize=(2.6, 2.4),
+                    constrained_layout=True,
+                )
+                draw_panel(axis, panel)
+                if add_panel_labels:
+                    label_panel(axis, panel, label)
+                candidate = panel_output_dir / output_name
+                figure.savefig(
+                    candidate,
+                    dpi=dpi,
+                    bbox_inches="tight",
+                    pad_inches=0.08,
+                    facecolor="white",
+                )
+                exported.append({"panel": panel[0], "label": label, "path": str(candidate)})
+                if not show:
+                    plt.close(figure)
+            return exported
+
         results = []
         for run in self._runs():
             figures = None
+            figure = None
+            saved_path = None
+            exported_panels: list[dict[str, Any]] = []
             if plot:
-                figures = {}
-                for name, image in (
-                    ("original", run.original),
-                    ("encrypted", run.encrypted),
-                    ("decrypted", run.decrypted),
-                ):
-                    figure, _ = plot_pixel_histogram(
-                        image,
-                        title=f"{run.image_path.name} - {name}",
-                        show=show,
-                    )
-                    figures[name] = figure
+                # One independent reference-style analysis figure per test image.
+                image_stem = run.image_path.stem
+                base_name = f"{image_stem}_histogram.png"
+                output_name = base_name
+                suffix = 2
+                while output_name in used_output_names:
+                    output_name = f"{image_stem}_histogram_{suffix}.png"
+                    suffix += 1
+                used_output_names.add(output_name)
+                sequence = build_sequence(
+                    run.original,
+                    run.encrypted,
+                    channel_histograms(run.original),
+                    channel_histograms(run.encrypted),
+                )
+                with plt.rc_context(reference_rc if use_reference_style else {}):
+                    figure, saved_path = plot_combined(sequence, output_name)
+                    if export_panels:
+                        exported_panels = export_panel_figures(image_stem, sequence)
+                figures = {"comparison": figure}
             results.append(
                 {
                     "image": str(run.image_path),
@@ -1014,6 +1254,9 @@ class Analysis:
                     "encrypted": self._histograms(run.encrypted),
                     "decrypted": self._histograms(run.decrypted),
                     "figures": figures,
+                    "figure": figure,
+                    "save_path": saved_path,
+                    "panels": exported_panels,
                     "exact_recovery": bool(np.array_equal(run.original, run.decrypted)),
                 }
             )
@@ -1649,6 +1892,191 @@ class Analysis:
             "save_path": str(saved_path) if saved_path is not None else None,
         }
 
+    def test_decryption_user_key_sensitivity(
+        self,
+        *,
+        user_key: str | None = None,
+        bit_index: int = 49,
+        figsize: tuple[float, float] | None = None,
+        save_path: str | Path | None = None,
+        dpi: int = 150,
+        show: bool = True,
+        print_result: bool = True,
+    ) -> dict[str, Any]:
+        """Compare decryption after flipping one selected bit of the V2 user key.
+
+        ``bit_index`` is zero-based and must be in the range [0, 383]. Encryption
+        and correct decryption use ``user_key``; wrong decryption regenerates all
+        key material after flipping exactly that bit.
+        """
+        if not isinstance(bit_index, (int, np.integer)) or isinstance(bit_index, (bool, np.bool_)):
+            raise TypeError("bit_index must be an integer")
+        bit_index = int(bit_index)
+        if not 0 <= bit_index < 384:
+            raise ValueError("bit_index must be in the zero-based range [0, 383]")
+        if not isinstance(dpi, int) or dpi <= 0:
+            raise ValueError("dpi must be a positive integer")
+
+        encrypter = self._encryption_owner()
+        if encrypter is None or not callable(getattr(encrypter, "set_user_key", None)):
+            raise TypeError(
+                "test_decryption_user_key_sensitivity requires a bound Encrypter.encrypt "
+                "function whose owner implements set_user_key()"
+            )
+        if not callable(getattr(encrypter, "resume_user_key", None)):
+            raise TypeError("the encryption-function owner must implement resume_user_key()")
+
+        from .KeyStream import normalize_user_key_v2
+
+        baseline_key = normalize_user_key_v2(
+            encrypter.user_key if user_key is None else user_key
+        )
+        flipped_bit = "1" if baseline_key[bit_index] == "0" else "0"
+        wrong_key = baseline_key[:bit_index] + flipped_bit + baseline_key[bit_index + 1:]
+
+        decrypter = getattr(self.decryption_function, "__self__", None)
+        if decrypter is None and hasattr(self.decryption_function, "func"):
+            decrypter = getattr(self.decryption_function.func, "__self__", None)
+        decrypt_v2 = getattr(decrypter, "Decrypt_V2", None)
+        if not callable(decrypt_v2):
+            raise TypeError(
+                "test_decryption_user_key_sensitivity requires a bound DeEncrypter method "
+                "whose owner implements Decrypt_V2()"
+            )
+
+        rows: list[dict[str, Any]] = []
+        for path in self.image_paths:
+            original = _to_uint8_pixels(_load_image_array(path))
+            try:
+                encrypter.set_user_key(baseline_key, image=path)
+                encryption_result = self._invoke(self.encryption_function, path)
+                encrypted_value, decryption_context = self._unpack_encryption_result(encryption_result)
+                if len(decryption_context) != 1:
+                    raise ValueError("encryption result must provide one EncryptionMetadata object")
+                metadata = decryption_context[0]
+                encrypted = _to_uint8_pixels(_load_image_array(encrypted_value))
+
+                correct_result = self._invoke(decrypt_v2, encrypted_value, encrypter, metadata)
+                correct = _to_uint8_pixels(
+                    _load_image_array(self._unpack_decryption_result(correct_result))
+                )
+
+                encrypter.set_user_key(wrong_key, image=path)
+                wrong_result = self._invoke(decrypt_v2, encrypted_value, encrypter, metadata)
+                wrong = _to_uint8_pixels(
+                    _load_image_array(self._unpack_decryption_result(wrong_result))
+                )
+            finally:
+                encrypter.resume_user_key()
+
+            if not (original.shape == encrypted.shape == correct.shape == wrong.shape):
+                raise ValueError("original, encrypted, and decrypted images must have identical shapes")
+            wrong_difference = original.astype(np.int16) - wrong.astype(np.int16)
+            rows.append(
+                {
+                    "image": str(path),
+                    "original": original,
+                    "encrypted": encrypted,
+                    "correct_decryption": correct,
+                    "wrong_decryption": wrong,
+                    "bit_index": bit_index,
+                    "original_bit": baseline_key[bit_index],
+                    "flipped_bit": wrong_key[bit_index],
+                    "correct_exact_recovery": bool(np.array_equal(original, correct)),
+                    "wrong_exact_recovery": bool(np.array_equal(original, wrong)),
+                    "wrong_key_npcr_percent": float(np.mean(original != wrong) * 100.0),
+                    "wrong_key_uaci_percent": float(
+                        np.mean(np.abs(wrong_difference)) / 255.0 * 100.0
+                    ),
+                }
+            )
+
+        figure, axes = plt.subplots(
+            len(rows),
+            4,
+            figsize=figsize or (16.0, 3.8 * len(rows)),
+            squeeze=False,
+            constrained_layout=True,
+        )
+        column_titles = (
+            "Original",
+            "Encrypted",
+            "Correct-key decryption",
+            f"Wrong-key decryption\nbit {bit_index}: {baseline_key[bit_index]} -> {wrong_key[bit_index]}",
+        )
+        for row_index, row in enumerate(rows):
+            images = (
+                row["original"],
+                row["encrypted"],
+                row["correct_decryption"],
+                row["wrong_decryption"],
+            )
+            for column_index, image in enumerate(images):
+                axis = axes[row_index, column_index]
+                if image.ndim == 2:
+                    axis.imshow(image, cmap="gray", vmin=0, vmax=255)
+                else:
+                    axis.imshow(image)
+                if row_index == 0:
+                    axis.set_title(column_titles[column_index], fontsize=13, fontweight="bold")
+                axis.axis("off")
+            axes[row_index, 0].text(
+                -0.04,
+                0.5,
+                Path(row["image"]).name,
+                transform=axes[row_index, 0].transAxes,
+                rotation=90,
+                ha="right",
+                va="center",
+                fontsize=10,
+            )
+
+        saved_path: Path | None = None
+        if save_path is not None:
+            saved_path = Path(save_path).expanduser().resolve()
+            saved_path.parent.mkdir(parents=True, exist_ok=True)
+            figure.savefig(saved_path, dpi=dpi, bbox_inches="tight", facecolor="white")
+
+        if print_result:
+            self._print_heading(
+                f"Decryption user-key sensitivity (bit {bit_index}: "
+                f"{baseline_key[bit_index]} -> {wrong_key[bit_index]})"
+            )
+            _print_ascii_table(
+                (
+                    "Image",
+                    "Changed Bit",
+                    "Correct Key Exact",
+                    "Wrong Key Exact",
+                    "Wrong Key NPCR (%)",
+                    "Wrong Key UACI (%)",
+                    "Saved Figure",
+                ),
+                [
+                    (
+                        Path(row["image"]).name,
+                        f"{bit_index}: {row['original_bit']} -> {row['flipped_bit']}",
+                        self._yes_no(row["correct_exact_recovery"]),
+                        self._yes_no(row["wrong_exact_recovery"]),
+                        self._format_number(row["wrong_key_npcr_percent"]),
+                        self._format_number(row["wrong_key_uaci_percent"]),
+                        str(saved_path) if saved_path is not None and index == 0 else "-",
+                    )
+                    for index, row in enumerate(rows)
+                ],
+            )
+        if show:
+            plt.show()
+        return {
+            "figure": figure,
+            "axes": axes,
+            "rows": rows,
+            "user_key": baseline_key,
+            "wrong_user_key": wrong_key,
+            "bit_index": bit_index,
+            "save_path": str(saved_path) if saved_path is not None else None,
+        }
+
     def test_decryption_robustness(
         self,
         *,
@@ -2146,6 +2574,7 @@ class Analysis:
     correlation_test = test_correlation
     key_sensitivity_test = test_key_sensitivity
     decryption_key_sensitivity_test = test_decryption_key_sensitivity
+    decryption_user_key_sensitivity_test = test_decryption_user_key_sensitivity
     decryption_robustness_test = test_decryption_robustness
     differential_attack_test = test_differential_attack
     classic_attack_test = test_classic_attack
@@ -2162,7 +2591,6 @@ __all__ = [
 
 
 if __name__ == "__main__":
-    print("1")
     from .Encryption import (
     Encrypter,
     DeEncrypter,
@@ -2181,7 +2609,7 @@ if __name__ == "__main__":
                         [
                         r"C:\ImageEncryption\images\img1.png",
                         r"C:\ImageEncryption\images\img2.png",
-                        # r"C:\ImageEncryption\images\img3.png",
+                        r"C:\ImageEncryption\images\img3.png",
                         # r"C:\ImageEncryption\images\img4.png",
                         # r"C:\ImageEncryption\images\img5.png",
                         # r"C:\ImageEncryption\images\img6.png",
@@ -2191,7 +2619,7 @@ if __name__ == "__main__":
     #卡方检验 global_parallel_size居然会影响卡方检验的结果，取64不错
     # analysis.chi_square_test()
     #直方图
-    # analysis.histogram_test(plot=True, show=True)
+    analysis.histogram_test(plot=True, show=True)
     #相关性分析
     # analysis.test_correlation(plot=False, show=True)
     #信息熵
@@ -2212,15 +2640,14 @@ if __name__ == "__main__":
     #     save_path="mywork/outputs/classic_attack.png",
     # )
     #鲁棒性分析
-    result = analysis.test_decryption_robustness(
-    mask_ratio=0.25,    # total nominal coverage across three mask squares
-    mask_value=0,
-    salt_ratio=0.01,
-    gaussian_std=0.01,
-    seed=2026,
-    show=True,
-    save_path="output/decryption_robustness.png",
-    )
+    # result = analysis.test_decryption_robustness(
+    # mask_ratio=0.25,    # total nominal coverage across three mask squares
+    # mask_value=0,
+    # salt_ratio=0.01,
+    # gaussian_std=0.01,
+    # seed=2026,
+    # show=True,
+    # save_path="output/decryption_robustness.png",
+    # )
     #明文vs密文 PSNR
     # analysis.psnr_test()
- 

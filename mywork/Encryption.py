@@ -468,7 +468,10 @@ class Encrypter:
         key_source: str | Path | np.ndarray | pil_image.Image | None = None,
         *,
         global_permutation_method: str | None = None,
+        user_key: str | None = None,
     ) -> None:
+        from .KeyStream import normalize_user_key_v2,DEFAULT_USER_KEY_BITS
+
         self.config = config or EncryptionConfig()
         if global_permutation_method is not None:
             self.config = replace(
@@ -478,6 +481,8 @@ class Encrypter:
         self._cml: SalomoncouplingCML | None = None
         self._cml_source_array: np.ndarray | None = None
         self._cml_default_parameters: dict[str, float] | None = None
+        self._user_key_snapshot: str | None = None
+        self.user_key = DEFAULT_USER_KEY_BITS
         if key_source is not None:
             self._initialize_cml(key_source)
 
@@ -540,6 +545,37 @@ class Encrypter:
         self._cml_default_parameters = None
         return dict(restored) if restored is not None else None
 
+    def set_user_key(
+        self,
+        user_key: str,
+        *,
+        image: str | Path | np.ndarray | pil_image.Image | None = None,
+    ) -> str:
+        """Temporarily replace the 384-bit V2 user key and rebuild the CML."""
+        from .KeyStream import normalize_user_key_v2
+
+        normalized_key = normalize_user_key_v2(user_key)
+        if self._user_key_snapshot is None:
+            self._user_key_snapshot = self.user_key
+        self.user_key = normalized_key
+        self._cml = None
+        self._cml_source_array = None
+        self._cml_default_parameters = None
+        if image is not None:
+            self._initialize_cml(image)
+        return self.user_key
+
+    def resume_user_key(self) -> str | None:
+        """Restore the user key saved by ``set_user_key()`` and clear stale CML state."""
+        restored = self._user_key_snapshot
+        if restored is not None:
+            self.user_key = restored
+        self._user_key_snapshot = None
+        self._cml = None
+        self._cml_source_array = None
+        self._cml_default_parameters = None
+        return restored
+
     def _initialize_cml(self, image: str | Path | np.ndarray | pil_image.Image) -> None:
         """Create and warm up image-dependent CML outside encryption timing."""
         if isinstance(image, (str, Path)):
@@ -550,7 +586,11 @@ class Encrypter:
             key_source = _load_rgb_image_array(image)
             image_shape = key_source.shape
             self._cml_source_array = key_source.copy()
-        self._cml = SalomoncouplingCML(L=image_shape[0] * image_shape[1], image_path=key_source)
+        self._cml = SalomoncouplingCML(
+            L=image_shape[0] * image_shape[1],
+            image_path=key_source,
+            user_key=self.user_key,
+        )
         self._cml.generate_rdseq_fast(1)
 
     @staticmethod
