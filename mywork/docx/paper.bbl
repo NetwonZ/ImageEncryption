@@ -1,36 +1,136 @@
-\begin{thebibliography}{1}
+\begin{thebibliography}{10}
 
-\bibitem{Kaneko1989Spatiotemporal}
+\bibitem{Chen2004CatMaps}
+Guanrong Chen, Yaobin Mao, and Charles~K. Chui.
+\newblock A symmetric image encryption scheme based on {3D} chaotic cat maps.
+\newblock {\em Chaos, Solitons \& Fractals}, 21(3):749--761, 2004.
+
+\bibitem{SaberiKamarposhti2024Survey}
+Morteza SaberiKamarposhti, Amirabbas Ghorbani, and Mehdi Yadollahi.
+\newblock A comprehensive survey on image encryption: Taxonomy, challenges, and future directions.
+\newblock {\em Chaos, Solitons \& Fractals}, 178:114361, 2024.
+
+\bibitem{Wang2020MixedMCML}
+Xingyuan Wang, Nana Guan, Hongyu Zhao, Siwei Wang, and Yingqian Zhang.
+\newblock A new image encryption scheme based on coupling map lattices with mixed multi-chaos.
+\newblock {\em Scientific Reports}, 10(1):9784, 2020.
+
+\bibitem{Kaneko1989CML}
 Kunihiko Kaneko.
 \newblock Spatiotemporal chaos in one- and two-dimensional coupled map lattices.
 \newblock {\em Physica D: Nonlinear Phenomena}, 37(1-3):60--82, 1989.
+
+\bibitem{Khellat2011GNCML}
+Farhad Khellat, Akashe Ghaderi, and Nastaran Vasegh.
+\newblock Li--yorke chaos and synchronous chaos in a globally nonlocal coupled map lattice.
+\newblock {\em Chaos, Solitons \& Fractals}, 44(11):934--939, 2011.
+
+\bibitem{Rhouma2009OCML}
+Rhouma Rhouma, Soumaya Meherzi, and Safya Belghith.
+\newblock Ocml-based colour image encryption.
+\newblock {\em Chaos, Solitons \& Fractals}, 40(1):309--318, 2009.
+
+\bibitem{Wang2022TWMCML}
+Xingyuan Wang and Pengbo Liu.
+\newblock A new full chaos coupled mapping lattice and its application in privacy image encryption.
+\newblock {\em IEEE Transactions on Circuits and Systems I: Regular Papers}, 69(3):1291--1301, 2022.
+
+\bibitem{Zhang2014MLNCML}
+Ying-Qian Zhang and Xing-Yuan Wang.
+\newblock Spatiotemporal chaos in mixed linear--nonlinear coupled logistic map lattice.
+\newblock {\em Physica A: Statistical Mechanics and its Applications}, 402:104--118, 2014.
+
+\bibitem{Zhang2014MLNCMLEnc}
+Ying-Qian Zhang and Xing-Yuan Wang.
+\newblock A symmetric image encryption algorithm based on mixed linear--nonlinear coupled map lattice.
+\newblock {\em Information Sciences}, 273:329--351, 2014.
+
+\bibitem{Zhang2015NCML}
+Ying-Qian Zhang and Xing-Yuan Wang.
+\newblock A new image encryption algorithm based on non-adjacent coupled map lattices.
+\newblock {\em Applied Soft Computing}, 26:10--20, 2015.
+
+\bibitem{Wang2019NDCML}
+Xingyuan Wang, Le~Feng, Rui Li, and Fuchen Zhang.
+\newblock A fast image encryption algorithm based on non-adjacent dynamically coupled map lattice model.
+\newblock {\em Nonlinear Dynamics}, 95(4):2797--2824, 2019.
+
+\bibitem{Wang2019MCML}
+Xingyuan Wang, Hongyu Zhao, and Mingxu Wang.
+\newblock A new image encryption algorithm with nonlinear-diffusion based on multiple coupled map lattices.
+\newblock {\em Optics \& Laser Technology}, 115:42--57, 2019.
+
+\bibitem{Tao2020MDCML}
+Ye~Tao, Wenhua Cui, and Zhao Zhang.
+\newblock Spatiotemporal chaos in multiple dynamically coupled map lattices and its application in a novel image encryption algorithm.
+\newblock {\em Journal of Information Security and Applications}, 55:102650, 2020.
+
+\bibitem{Wang2018LDCML}
+Xingyuan Wang, Le~Feng, Shibing Wang, Chuan Zhang, and Yingqian Zhang.
+\newblock Spatiotemporal chaos in coupled logistic map lattice with dynamic coupling coefficient and its application in image encryption.
+\newblock {\em IEEE Access}, 6:39705--39724, 2018.
+
+\bibitem{Wang2020CCML}
+Mingxu Wang, Xingyuan Wang, Chunpeng Wang, Zhiqiu Xia, Hongyu Zhao, Suo Gao, Shuang Zhou, and Nianmin Yao.
+\newblock Spatiotemporal chaos in cross coupled map lattice with dynamic coupling coefficient and its application in bit-level color image encryption.
+\newblock {\em Chaos, Solitons \& Fractals}, 139:110028, 2020.
+
+\bibitem{Wang2021MDCML}
+Xingyuan Wang and Jingjing Yang.
+\newblock Spatiotemporal chaos in multiple coupled mapping lattices with multi-dynamic coupling coefficient and its application in color image encryption.
+\newblock {\em Chaos, Solitons \& Fractals}, 147:110970, 2021.
+
+\bibitem{Wang2021PCML}
+Xingyuan Wang and Jingjing Yang.
+\newblock A privacy image encryption algorithm based on piecewise coupled map lattice with multi dynamic coupling coefficient.
+\newblock {\em Information Sciences}, 569:217--240, 2021.
+
+\bibitem{Zhang20182DMLNCML}
+Ying-Qian Zhang, Yi~He, and Xing-Yuan Wang.
+\newblock Spatiotemporal chaos in mixed linear--nonlinear two-dimensional coupled logistic map lattice.
+\newblock {\em Physica A: Statistical Mechanics and its Applications}, 490:148--160, 2018.
+
+\bibitem{Du2024NCMLP}
+Longbiao Du, Lin Teng, Huipeng Liu, and Hanrui Lu.
+\newblock Multiple face images encryption based on a new non-adjacent dynamic coupled mapping lattice.
+\newblock {\em Expert Systems with Applications}, 238:121728, 2024.
+
+\bibitem{Li2025FaceNCML}
+Wei Li, Lingling Lu, Yang Yu, Chengye Zou, and Yunong Liu.
+\newblock Multiple face encryption based on non-adjacent coupled map lattice and improved yolov8 algorithm.
+\newblock {\em Journal of King Saud University Computer and Information Sciences}, 37(10):321, 2025.
+
+\bibitem{Ding2026ECPNC}
+Dawei Ding, Tao Liu, Hong Cheng, Zongli Yang, Xiang Liu, and Haitao Zhou.
+\newblock Spatiotemporal chaos in exponential cosine polynomial nonlinear coupling for image encryption: an adaptive multi-image compression encryption scheme with autoencoder.
+\newblock {\em Nonlinear Dynamics}, 114(5):353, 2026.
+
+\bibitem{Wang2026SQMCML}
+Jiakun Wang, Zhen Li, Weijie Tan, and Xianming Wu.
+\newblock Plaintext-related image encryption scheme based on a new sinusoidal-quadratic map {CML} and random-trajectory josephus permutation.
+\newblock {\em Physica Scripta}, 101(1):015213, 2026.
+
+\bibitem{Wang2025SCOCML}
+Jiakun Wang, Zhen Li, Weijie Tan, and Xianming Wu.
+\newblock A novel image encryption scheme with synchronous permutation--diffusion controlled by {CA} and a sine-cosine-optimized {CML} model.
+\newblock {\em The European Physical Journal Plus}, 140(9):841, 2025.
+
+\bibitem{Liu20263DCML}
+Zhuo Liu, Yong Wang, Jinyuan Liu, Jun Feng, and Leo~Yu Zhang.
+\newblock A newly image encryption scheme based on {3-D} coupled map lattice and baker map.
+\newblock {\em Cybersecurity}, 9(1):103, 2026.
 
 \bibitem{Yan2023ColorDNA}
 Shaohui Yan, Lin Li, Binxian Gu, Xi~Sun, Yu~Ren, and Yuyan Zhang.
 \newblock A color image encryption scheme based on chaotic mapping, chaotic system, and {DNA} coding.
 \newblock {\em Applied Intelligence}, 53(24):31181--31206, 2023.
 
-\bibitem{Afify2023DynamicDNA}
-Yasmine~M. Afify, Nada~H. Sharkawy, Walaa Gad, and Nagwa Badr.
-\newblock A new dynamic {DNA}-coding model for gray-scale image encryption.
-\newblock {\em Complex \& Intelligent Systems}, 10(1):745--761, 2023.
-
-\bibitem{Yu2024DNANetwork}
-Jinwei Yu, Kaiyu Peng, Langwen Zhang, and Wei Xie.
-\newblock Image encryption algorithm based on {DNA} network and hyperchaotic system.
-\newblock {\em The Visual Computer}, 40(11):8001--8021, 2024.
-
-\bibitem{Aldayel2025LLEVerified}
-Ibrahim Al-dayel, Muhammad~Faisal Nadeem, Yasir Bashir, and Ayesha Shabbir.
-\newblock Information-theoretic medical image encryption via {LLE}-verified chaotic keystreams and {DNA} diffusion.
-\newblock {\em Entropy}, 27(11):1149, 2025.
-
 \bibitem{Huang2025DNAEncoding}
 Li~Huang, Cong Ding, Zhenjie Bao, Haitao Chen, and Changsheng Wan.
 \newblock A {DNA} encoding image encryption algorithm based on chaos.
 \newblock {\em Mathematics}, 13(8):1330, 2025.
 
-\bibitem{zhu2023parallelDNA}
+\bibitem{Zhu2023ParallelDNA}
 Shenli Zhu, Xiaoheng Deng, Wendong Zhang, and Congxu Zhu.
 \newblock Image encryption scheme based on newly designed chaotic map and parallel dna coding.
 \newblock {\em Mathematics}, 11(1), 2023.
@@ -39,5 +139,95 @@ Shenli Zhu, Xiaoheng Deng, Wendong Zhang, and Congxu Zhu.
 Qiqi Cun, Xiaojun Tong, Zhu Wang, and Miao Zhang.
 \newblock A new chaotic image encryption algorithm based on dynamic {DNA} coding and {RNA} computing.
 \newblock {\em The Visual Computer}, 39(12):6589--6608, 2023.
+
+\bibitem{Afify2024DynamicDNA}
+Yasmine~M. Afify, Nada~H. Sharkawy, Walaa Gad, and Nagwa Badr.
+\newblock A new dynamic {DNA}-coding model for gray-scale image encryption.
+\newblock {\em Complex \& Intelligent Systems}, 10(1):745--761, 2024.
+
+\bibitem{Yu2024DNANetwork}
+Jinwei Yu, Kaiyu Peng, Langwen Zhang, and Wei Xie.
+\newblock Image encryption algorithm based on {DNA} network and hyperchaotic system.
+\newblock {\em The Visual Computer}, 40(11):8001--8021, 2024.
+
+\bibitem{Lai2025DNACubes}
+Qiang Lai and Hanqiang Hua.
+\newblock Secure medical image encryption scheme for healthcare {IoT} using novel hyperchaotic map and {DNA} cubes.
+\newblock {\em Expert Systems with Applications}, 264:125854, 2025.
+
+\bibitem{Su2025ThreeStrandDNA}
+Yingjie Su, Han Xia, Ziyu Chen, Han Chen, and Linqing Huang.
+\newblock A novel one-dimensional chaotic system for image encryption through the three-strand structure of {DNA}.
+\newblock {\em Entropy}, 27(8):776, 2025.
+
+\bibitem{Aldayel2025LLEDNA}
+Ibrahim Al-dayel, Muhammad~Faisal Nadeem, Yasir Bashir, and Ayesha Shabbir.
+\newblock Information-theoretic medical image encryption via {LLE}-verified chaotic keystreams and {DNA} diffusion.
+\newblock {\em Entropy}, 27(11):1149, 2025.
+
+\bibitem{Li2026DynamicDNA}
+Rui Li, Zefeng Zhang, Yuan Zhu, Chuanhong Du, and Licai Liu.
+\newblock Image encryption algorithm based on dual chaotic systems and dynamic {DNA} encoding.
+\newblock {\em Physica Scripta}, 101(25):255210, 2026.
+
+\bibitem{Mei2026DynamicDNA}
+Junhua Mei, Bingchan Fan, and Shan Wu.
+\newblock A novel image encryption algorithm based on cosine-modulated chaotic system and dynamic {DNA} coding.
+\newblock {\em Discover Applied Sciences}, 2026.
+
+\bibitem{Suzgen2026MemristiveDNA}
+Enes~Eren Suzgen, Muhammet~Emin Sahin, and Hasan Ulutas.
+\newblock A novel hybrid medical image encryption scheme based on memristive chaos and {DNA}-{ARX}-{3DES} with real-time implementation.
+\newblock {\em Scientific Reports}, 16(1):6230, 2026.
+
+\bibitem{Fridrich1998SymmetricCiphers}
+Jiri Fridrich.
+\newblock Symmetric ciphers based on two-dimensional chaotic maps.
+\newblock {\em International Journal of Bifurcation and Chaos}, 08(06):1259--1284, 1998.
+
+\bibitem{Li2016CrackingPermutation}
+Chengqing Li.
+\newblock Cracking a hierarchical chaotic image encryption algorithm based on permutation.
+\newblock {\em Signal Processing}, 118:203--210, 2016.
+
+\bibitem{Wang2021Zigzag}
+Xingyuan Wang and Xuan Chen.
+\newblock An image encryption algorithm based on dynamic row scrambling and zigzag transformation.
+\newblock {\em Chaos, Solitons \& Fractals}, 147:110962, 2021.
+
+\bibitem{Yang2025SlideZigzag}
+Zhixuan Yang and Lin Teng.
+\newblock A color image encryption algorithm using slide zigzag scrambling with two-dimensional hyperchaotic system.
+\newblock {\em Physica Scripta}, 100(6):065220, 2025.
+
+\bibitem{Sharmila2025Rubik}
+S.~Sharmila, R.S. Bhuvaneswaran, and Dhandapani Vaithiyanathan.
+\newblock Secure image encryption using rubik's cube-based scrambling with chaos-driven diffusion and circular shifts.
+\newblock {\em Optik}, 339:172533, 2025.
+
+\bibitem{Zhu2011BitLevel}
+Zhi-liang Zhu, Wei Zhang, Kwok-wo Wong, and Hai Yu.
+\newblock A chaos-based symmetric image encryption scheme using a bit-level permutation.
+\newblock {\em Information Sciences}, 181(6):1171--1186, 2011.
+
+\bibitem{Xu2016BitLevel}
+Lu~Xu, Zhi Li, Jian Li, and Wei Hua.
+\newblock A novel bit-level image encryption algorithm based on chaotic maps.
+\newblock {\em Optics and Lasers in Engineering}, 78:17--25, 2016.
+
+\bibitem{Lu2026BitLevelScramble}
+Jun Lu, Kuoyu Wu, Jiaxin Zhang, and Xue Xia.
+\newblock An image encryption paradigm: Combining bit-level multi-stage dynamic scrambling with a hyperchaotic map.
+\newblock {\em Digital Signal Processing}, 168:105488, 2026.
+
+\bibitem{Li2025BitPlane}
+Weifeng Li, Bin Ge, Chenxing Xia, Menglin Ma, and Xiyun Huang.
+\newblock Image encryption algorithm for {3D}-hyperchaotic systems driven by nonlinear feedback mechanism.
+\newblock {\em Signal, Image and Video Processing}, 19(12):984, 2025.
+
+\bibitem{Yan2026BitLevelDiffusion}
+Lin Yan, Sheng Dong, and Weiqing Liu.
+\newblock Efficient image encryption scheme based on {7D-FHN} neural network with bit-level permutation and bidirectional column cascaded diffusion.
+\newblock {\em Physica Scripta}, 101(17):175204, 2026.
 
 \end{thebibliography}

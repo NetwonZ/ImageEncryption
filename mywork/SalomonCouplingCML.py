@@ -122,7 +122,7 @@ class SalomoncouplingCML:
   
 	两种初始化方式：
 	1. 直接提供参数字典和初始状态字典。
-	2. 提供用户密钥和图像路径，使用 keystream_generation 生成参数和初始状态。
+	2. 提供用户密钥和图像路径，使用 keystream_generation_v2 生成参数和初始状态。
 	"""
 
 	def __init__(
@@ -158,16 +158,17 @@ class SalomoncouplingCML:
 
 
 		if user_key is None:
-			import random
-			seed  = 2026
-			random.seed(seed)
-			binary_key_str = format(random.getrandbits(256), "0256b")
-			user_key = binary_key_str
+			# from .KeyStream import DEFAULT_USER_KEY_BITS_V2
+			# user_key = DEFAULT_USER_KEY_BITS_V2
 
+			from .KeyStream import DEFAULT_USER_KEY_BITS
+			user_key = DEFAULT_USER_KEY_BITS
+     
 		if image_path is not None:
-			from . KeyStream import keystream_generation
+			from .KeyStream import keystream_generation_v2,keystream_generation
 			st = time.perf_counter()
-			key = keystream_generation(L, image_path, user_key)
+			# key = keystream_generation_v2(L, image_path, user_key)
+			key = keystream_generation(L,image_path,user_key)
 			self.L = int(L)
 			self.mu = float(key["mu"])
 			self.v = float(key["v"])

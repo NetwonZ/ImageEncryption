@@ -1,0 +1,67 @@
+\section{加密与解密算法}
+
+\subsection{密钥设计与混沌序列生成}
+
+为提升密码系统的抗攻击性能，抵御选择明文攻击（CPA）与已知明文攻击（KPA），本方案设计了一种基于明文图像与外部密钥双驱动的参数及密钥流生成机制。系统利用尺寸为 $M \times N$ 的明文图像 $P$ 通过 SHA-384 哈希函数生成 384 位内部密钥 $K$，并与通信双方预先商定的 384 位外部密钥 $E$ 共同作用。将 $K$ 与 $E$ 分别均分为 8 个 48 位的子块：$K = [k_1, k_2, \dots, k_8]$ 与 $E = [e_1, e_2, \dots, e_8]$，其中每个子块的取值范围为 $[0, 2^{48}-1]$。
+
+为消除各子块间的局部相关性，系统采用双向滑动窗口结构进行交叉扰动：当滑动窗口在内部密钥 $K$ 上正向滑动时，在外部密钥 $E$ 上逆向滑动。五个中间归一化变量 $V_i \in [0, 1)$（$i = 1, 2, \dots, 5$）的计算公式如下：
+\begin{equation}
+\left\{
+\begin{aligned}
+    V_1 &= \frac{(k_1 \oplus k_2 \oplus k_3 \oplus k_4) + (e_8 \oplus e_7 \oplus e_6 \oplus e_5)}{2 \times 2^{48}}, \\
+    V_2 &= \frac{(k_2 \oplus k_3 \oplus k_4 \oplus k_5) + (e_7 \oplus e_6 \oplus e_5 \oplus e_4)}{2 \times 2^{48}}, \\
+    V_3 &= \frac{(k_3 \oplus k_4 \oplus k_5 \oplus k_6) + (e_6 \oplus e_5 \oplus e_4 \oplus e_3)}{2 \times 2^{48}}, \\
+    V_4 &= \frac{(k_4 \oplus k_5 \oplus k_6 \oplus k_7) + (e_5 \oplus e_4 \oplus e_3 \oplus e_2)}{2 \times 2^{48}}, \\
+    V_5 &= \frac{(k_5 \oplus k_6 \oplus k_7 \oplus k_8) + (e_4 \oplus e_3 \oplus e_2 \oplus e_1)}{2 \times 2^{48}},
+\end{aligned}
+\right.
+\label{eq:Vi}
+\end{equation}
+式中 $\oplus$ 表示按位异或运算。由于每个 4 块异或项的最大取值为 $2^{48}-1$，分子的算术加和严格小于 $2 \times 2^{48}$，因此式~(\ref{eq:Vi})保证了各 $V_i \in [0, 1)$。随后，利用正弦非线性折叠消除线性关系，提取出系统的动力学控制参数 $(\mu, v, \alpha, \beta)$ 及混沌初值 $x_0$：
+\begin{equation}
+\left\{
+\begin{aligned}
+    \mu &= \bmod\left( \left\lfloor |\sin(4\pi \cdot V_1)| \times 10^6 \right\rfloor, 10 \right), \\
+    v &= \bmod\left( \left\lfloor |\sin(4\pi \cdot V_2)| \times 10^6 \right\rfloor, 10 \right), \\
+    \alpha &= \bmod\left( \left\lfloor |\sin(4\pi \cdot V_3)| \times 10^6 \right\rfloor, 10 \right), \\
+    \beta &= \bmod\left( \left\lfloor |\sin(4\pi \cdot V_4)| \times 10^6 \right\rfloor, 10 \right), \\
+    x_0 &= \bmod\left( |\sin(4\pi \cdot V_5)| \times 10^6, 1 \right),
+\end{aligned}
+\right.
+\end{equation}
+其中 $\lfloor \cdot \rfloor$ 为向下取整函数，$\bmod(z, 1) = z - \lfloor z \rfloor$ 表示取小数部分，使得初值 $x_0 \in (0, 1)$。将派生得到的初值 $x_0$ 和参数输入离散混沌系统：
+\begin{equation}
+    x_{t+1} = \left| \sin\left( (5 + 3\mu) \left( 1 - v \cdot x_t \cdot \sin\left( 15\pi x_t (1 - x_t) \right) \right) \right) \right|.
+\end{equation}
+为消除初始暂态效应，系统迭代前 $N_0$ 次被舍弃，继续收集后续 $L = M \times N$ 次迭代输出，构成最终的伪随机密钥流序列 $X = \{x_1, x_2, \dots, x_L\}$。该算法的完整执行过程如算法 1 所示。
+
+\begin{algorithm}[htbp]
+\caption{Parameters and Keystream Generation}
+\label{alg:keystream}
+\begin{algorithmic}[1]
+\REQUIRE Plaintext image $P$ of size $M \times N$, 384-bit external secret key $E$, transient iteration count $N_0$, keystream length $L$.
+\ENSURE Chaotic parameters $(\mu, v, \alpha, \beta)$, initial state $x_0$, pseudorandom keystream $X$.
+
+\STATE $H \leftarrow \text{SHA-384}(P)$;
+\STATE Split $H$ into 8 blocks of 48-bit integers: $K = [k_1, k_2, \dots, k_8]$;
+\STATE Split $E$ into 8 blocks of 48-bit integers: $E = [e_1, e_2, \dots, e_8]$;
+\FOR{$i = 1$ \TO $5$}
+    \STATE $S_K \leftarrow k_i \oplus k_{i+1} \oplus k_{i+2} \oplus k_{i+3}$;
+    \STATE $S_E \leftarrow e_{9-i} \oplus e_{8-i} \oplus e_{7-i} \oplus e_{6-i}$;
+    \STATE $V_i \leftarrow \frac{S_K + S_E}{2 \times 2^{48}}$;
+\ENDFOR
+\STATE $\mu \leftarrow \bmod\left( \lfloor |\sin(4\pi \cdot V_1)| \times 10^6 \rfloor, 10 \right)$;
+\STATE $v \leftarrow \bmod\left( \lfloor |\sin(4\pi \cdot V_2)| \times 10^6 \rfloor, 10 \right)$;
+\STATE $\alpha \leftarrow \bmod\left( \lfloor |\sin(4\pi \cdot V_3)| \times 10^6 \rfloor, 10 \right)$;
+\STATE $\beta \leftarrow \bmod\left( \lfloor |\sin(4\pi \cdot V_4)| \times 10^6 \rfloor, 10 \right)$;
+\STATE $x_0 \leftarrow \bmod\left( |\sin(4\pi \cdot V_5)| \times 10^6, 1 \right)$;
+\STATE $x \leftarrow x_0$;
+\FOR{$t = 1$ \TO $N_0 + L$}
+    \STATE $x \leftarrow \left| \sin\left( (5 + 3\mu) \left( 1 - v \cdot x \cdot \sin(15\pi x (1 - x)) \right) \right) \right|$;
+    \IF{$t > N_0$}
+        \STATE $X[t - N_0] \leftarrow x$;
+    \ENDIF
+\ENDFOR
+\RETURN $\mu, v, \alpha, \beta, x_0, X$;
+\end{algorithmic}
+\end{algorithm}
