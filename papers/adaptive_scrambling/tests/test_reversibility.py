@@ -7,7 +7,9 @@ from pathlib import Path
 import unittest
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))          # src 包根（供 src.xxx 导入）
+sys.path.insert(0, str(PROJECT_ROOT / "src"))  # src 内部模块名（adaptive_scrambling 等）
 
 from adaptive_scrambling import adaptive_scramble, adaptive_unscramble, choose_round_configs
 from chaotic_neuron import generate_chaotic_sequences

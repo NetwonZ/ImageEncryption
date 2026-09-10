@@ -23,8 +23,8 @@ try:  # 支持直接运行与包模块运行。
     from .image_io import load_grayscale
     from .pipeline import ImageCryptosystem
 except ImportError:  # pragma: no cover - 直接脚本执行时使用
-    from image_io import load_grayscale
-    from pipeline import ImageCryptosystem
+    from src.image_io import load_grayscale
+    from src.pipeline import ImageCryptosystem
 
 # 8-bit 灰度图的理论理想值（NPCR 为 (1 - 1/256) * 100）
 IDEAL_NPCR = 99.6094

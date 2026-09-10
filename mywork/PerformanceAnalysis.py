@@ -1012,13 +1012,14 @@ class Analysis:
 
         where ``h_k`` is the frequency of pixel value ``k``. Lower HV means a
         more uniform ciphertext histogram. All panel labels ``(a)``, ``(b)``,
-        ``(c)``, ... are drawn with ``set_xlabel`` at the same axes-relative
-        position on every axis, so the bottom labels of every column line up on
-        the same baseline. ``bar_alpha`` controls the transparency of the
-        histogram bars so overlapping channel histograms stay readable.
-        The single combined figure is saved as ``histogram_grid.png`` below
-        ``save_dir``. Per-channel HV values are returned in
-        ``rows[i]["encrypted_hv"]`` and printed as a table.
+        ``(c)``, ... are drawn below each panel at a shared baseline per row
+        (aligned in figure space after the axes are laid out), so the bottom
+        labels of every row line up even though image panels and histogram
+        panels can end up slightly different heights. ``bar_alpha`` controls
+        the transparency of the histogram bars so overlapping channel
+        histograms stay readable. The single combined figure is saved as
+        ``histogram_grid.png`` below ``save_dir``. Per-channel HV values are
+        returned in ``rows[i]["encrypted_hv"]`` and printed as a table.
         """
         if not isinstance(dpi, int) or dpi <= 0:
             raise ValueError("dpi must be a positive integer")
@@ -1099,11 +1100,42 @@ class Analysis:
             return draw_histogram_panel(axis, channels, encrypted=encrypted)
 
         def label_panel(axis, label: str) -> None:
-            # set_xlabel anchors the caption below every panel at the same
-            # axes-relative position, so all labels share one horizontal
-            # baseline even when the last row has tick labels and the rows
-            # above do not.
-            axis.set_xlabel(label, labelpad=6, fontsize=11)
+            # Store the caption on the axis; the exact position is resolved in
+            # align_row_captions() after the figure has been drawn, so that
+            # every caption in a row can share the same baseline.
+            axis._hv_caption_text = label
+
+        def align_row_captions(figure, axes, gap_points: float = 6.0) -> None:
+            # Draw once to resolve the constrained-layout geometry, then put a
+            # free-floating caption in display coordinates at a shared
+            # baseline (the lowest bottom edge in the row) below every panel.
+            # The figure must be saved afterwards WITHOUT bbox_inches="tight"
+            # so these display positions survive unchanged.
+            figure.canvas.draw()
+            renderer = figure.canvas.get_renderer()
+            gap_display = gap_points * figure.dpi / 72.0
+            for row_axes in axes:
+                bottoms = [
+                    axis.get_window_extent(renderer).y0
+                    for axis in row_axes
+                    if hasattr(axis, "_hv_caption_text")
+                ]
+                if not bottoms:
+                    continue
+                baseline = min(bottoms) - gap_display
+                for axis in row_axes:
+                    label = getattr(axis, "_hv_caption_text", None)
+                    if label is None:
+                        continue
+                    bbox = axis.get_window_extent(renderer)
+                    figure.text(
+                        (bbox.x0 + bbox.x1) / 2.0 / figure.bbox.width,
+                        baseline / figure.bbox.height,
+                        label,
+                        ha="center",
+                        va="top",
+                        fontsize=11,
+                    )
 
         def panel_label(index: int) -> str:
             # (a) ... (z), (aa) ... (az), (ba) ... spreadsheet-style letters.
@@ -1175,7 +1207,9 @@ class Analysis:
                     column_count,
                     figsize=(2.55 * column_count, 2.6 * len(row_specs)),
                     squeeze=False,
-                    constrained_layout=True,
+                    # Reserve a bottom strip for the row captions, which are
+                    # placed in figure coordinates by align_row_captions().
+                    constrained_layout={"rect": (0.0, 0.035, 1.0, 1.0)},
                 )
                 panel_index = 0
                 for row_index, (run, sequence, _) in enumerate(row_specs):
@@ -1213,14 +1247,14 @@ class Analysis:
                         panel_index += 1
                     for column_index in range(len(sequence), column_count):
                         axes[row_index, column_index].axis("off")
+                if add_panel_labels:
+                    align_row_captions(figure, axes)
                 if output_dir is not None:
                     output_dir.mkdir(parents=True, exist_ok=True)
                     candidate = output_dir / "histogram_grid.png"
                     figure.savefig(
                         candidate,
                         dpi=dpi,
-                        bbox_inches="tight",
-                        pad_inches=0.12,
                         facecolor="white",
                     )
                     saved_path = str(candidate)
@@ -2598,6 +2632,7 @@ if __name__ == "__main__":
                         r"C:\ImageEncryption\images\img5.png",
                         r"C:\ImageEncryption\images\img6.png",
                         r"C:\ImageEncryption\images\img7.png",
+                        r"C:\ImageEncryption\images\img8.png"
                         ])
     # result = analysis.encryption_decryption_test(show=True)
     #卡方检验 global_parallel_size居然会影响卡方检验的结果，取64不错
