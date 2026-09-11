@@ -23,4 +23,26 @@
 \end{equation}
 其中，$f_0 = (M \times N) / 256$ 表示理想均匀分布下像素值的期望出现频率（$M \times N$ 为图像尺寸），$f_i$ 为灰度值 $i$ 的实际出现频数。当显著性水平 $\alpha$ 设为 $0.005$（自由度为 $255$）时，卡方分布的临界阈值为 $293.24783$。
 
-与直方图相比，$HV$ 能更准确直观地反映像素分布的均匀性，表[tab]展示了我们算法与其他算法加密前后像素分布的对比；若密文图像计算所得的 $\chi^2$ 均小于 $293.24783$，则说明密文图像通过了显著性检验，像素值呈现出高度均匀的分布。
+与直方图相比，$HV$ 能更准确直观地反映像素分布的均匀性，表~\ref{tab:hv_comparison}展示了我们算法与其他算法加密前后像素分布的对比；若密文图像计算所得的 $\chi^2$ 均小于 $293.24783$，则说明密文图像通过了显著性检验，像素值呈现出高度均匀的分布。
+
+\begin{table}[htbp]
+\centering
+\caption{The results of $HV$ test and the comparison with the related algorithms.}
+\label{tab:hv_comparison}
+\begin{tabular}{llcc}
+\toprule
+Algorithms & Images & Plain image & Encrypted image \\
+\midrule
+proposed               & img1.png & 895231.41  & 1020.48 \\
+                       & img2.png & 407453.85  & 989.44  \\
+                       & img3.png & 950136.46  & 1048.29 \\
+                       & img4.png & 1363997.77 & 968.22  \\
+                       & img5.png & 727258.66  & 1138.61 \\
+\textbf{Avg. proposed} & --       & --         & 1033.01 \\
+Ref1                   & --       & --         & 1063.37 \\
+Ref2                   & --       & --         & 1002.38 \\
+Ref3                   & --       & --         & 999.92  \\
+Ref4                   & --       & --         & 1018.73 \\
+\bottomrule
+\end{tabular}
+\end{table}

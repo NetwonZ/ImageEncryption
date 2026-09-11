@@ -7,11 +7,11 @@ import numpy as np
 
 try:  # 支持 ``python main.py`` 与 ``python -m papers.adaptive_scrambling.main`` 两种入口。
     from .adaptive_scrambling import ScrambleKey, key_summary, scramble_rounds, unscramble_rounds
-    from .chaotic_neuron import NeuronParameters, generate_chaotic_sequences, seed_from_chaos
+    from .chaotic_neuron import NeuronParameters, generate_chaotic_sequences, params_from_secret, seed_from_chaos
     from .dynamic_diffusion import HARDENED_MODE, PAPER_MODE, diffuse_decrypt, diffuse_encrypt
 except ImportError:  # pragma: no cover - 直接脚本执行时使用
     from adaptive_scrambling import ScrambleKey, key_summary, scramble_rounds, unscramble_rounds
-    from chaotic_neuron import NeuronParameters, generate_chaotic_sequences, seed_from_chaos
+    from chaotic_neuron import NeuronParameters, generate_chaotic_sequences, params_from_secret, seed_from_chaos
     from dynamic_diffusion import HARDENED_MODE, PAPER_MODE, diffuse_decrypt, diffuse_encrypt
 
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+from dataclasses import dataclass, fields
 import numpy as np
 
 
@@ -79,3 +80,23 @@ def seed_from_chaos(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> int:
     """由三条混沌序列生成置乱阶段的确定性随机种子。"""
     value = int(np.floor(abs(float(np.sum(x + y + z, dtype=np.float64))) * 1e6))
     return value % (2 ** 32)
+
+
+def params_from_secret(secret: str) -> NeuronParameters:
+    """从任意字符串确定性派生神经元参数。
+
+    同一 secret 必然派生出同一组参数；不同 secret 派生出不同参数，
+    用于重复加密对比实验。派生方法：SHA-256 摘要的各字节段映射到
+    以论文默认值为中心的 ±20% 浮点区间。
+    """
+    if not isinstance(secret, str) or not secret:
+        raise ValueError("secret 必须为非空字符串")
+    digest = hashlib.sha256(secret.encode("utf-8")).digest()
+    base = NeuronParameters()
+    kwargs = {}
+    for i, f in enumerate(fields(NeuronParameters)):
+        default = getattr(base, f.name)
+        span = abs(default) * 0.2 if default != 0 else 0.2
+        unit = int.from_bytes(digest[i * 2: i * 2 + 2], "big") / 65535.0
+        kwargs[f.name] = default + (unit - 0.5) * 2.0 * span
+    return NeuronParameters(**kwargs)

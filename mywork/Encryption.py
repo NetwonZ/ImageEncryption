@@ -548,7 +548,7 @@ class Encrypter:
 
     def set_user_key(
         self,
-        user_key: str,
+        user_key: str|None = None,
         *,
         image: str | Path | np.ndarray | pil_image.Image | None = None,
     ) -> str:
@@ -1256,16 +1256,18 @@ class Encrypter:
         key_material = self.generate_key_material(self._cml, blocks, *image_array.shape[:2])
         recorder.record("Key material generation", started)
 
+        # =============DNA 编码=============#
         started = time.perf_counter()
         original_bitplanes = _image_to_bitplanes(image_array)
         dna_matrix = self.encode_to_dna(original_bitplanes, blocks, key_material.original_block_rule_ids)
         recorder.record("DNA encoding", started)
 
-
+        #==============局部置乱=============#
         started = time.perf_counter()
         permuted_dna = self.permute_within_blocks_V0(dna_matrix, blocks, key_material.intra_block_permutations)
         recorder.record("DNA intra-block permutation", started)
 
+        #=============全局置乱==============#
         started = time.perf_counter()
         globally_permuted_dna = self._apply_selected_global_permutation(
             permuted_dna,
@@ -1277,6 +1279,7 @@ class Encrypter:
             started,
         )
 
+        #=============局部扩散============#
         started = time.perf_counter()
         locally_diffused_dna = self.apply_block_diffusion(
             globally_permuted_dna,
@@ -1286,6 +1289,7 @@ class Encrypter:
         )
         recorder.record("Blockwise DNA diffusion", started)
 
+        #=============全局扩散============#
         started = time.perf_counter()
         globally_diffused_dna = self.apply_global_diffusion(
             locally_diffused_dna,

@@ -1283,6 +1283,52 @@ class Analysis:
                 for channel in ("R", "G", "B", "Gray")
                 if any(channel in result["encrypted_hv"] for result in results)
             ]
+            table_rows = [
+                (
+                    Path(result["image"]).name,
+                    *(
+                        self._format_number(result["encrypted_hv"].get(channel), 2)
+                        for channel in channel_order
+                    ),
+                    self._format_number(result["encrypted_hv"]["average"], 2),
+                    self._yes_no(result["exact_recovery"]),
+                )
+                for result in results
+            ]
+            # Mean row across all test images: one mean per channel column and
+            # one overall mean computed from every channel value of every image,
+            # so color and grayscale rows can share the table safely.
+            channel_means = {}
+            for channel in channel_order:
+                channel_values = [
+                    result["encrypted_hv"][channel]
+                    for result in results
+                    if channel in result["encrypted_hv"]
+                ]
+                channel_means[channel] = (
+                    float(np.mean(channel_values)) if channel_values else None
+                )
+            all_channel_values = [
+                result["encrypted_hv"][channel]
+                for result in results
+                for channel in channel_order
+                if channel in result["encrypted_hv"]
+            ]
+            exact_recoveries = [result["exact_recovery"] for result in results]
+            table_rows.append(
+                (
+                    "Mean",
+                    *(
+                        self._format_number(channel_means[channel], 2)
+                        for channel in channel_order
+                    ),
+                    self._format_number(
+                        float(np.mean(all_channel_values)) if all_channel_values else None,
+                        2,
+                    ),
+                    self._yes_no(all(exact_recoveries)),
+                )
+            )
             _print_ascii_table(
                 (
                     "Image",
@@ -1290,18 +1336,7 @@ class Analysis:
                     "Average HV",
                     "Exact Recovery",
                 ),
-                [
-                    (
-                        Path(result["image"]).name,
-                        *(
-                            self._format_number(result["encrypted_hv"].get(channel), 2)
-                            for channel in channel_order
-                        ),
-                        self._format_number(result["encrypted_hv"]["average"], 2),
-                        self._yes_no(result["exact_recovery"]),
-                    )
-                    for result in results
-                ],
+                table_rows,
             )
         return {
             "figure": figure,
@@ -2619,7 +2654,9 @@ if __name__ == "__main__":
     b_max=64,
     b_min=4,
     block_operation="xor",
-    global_parallel_size=64,)
+    global_parallel_size=4,
+    global_permutation_method = "global_bit_permutation_v2"
+    )
     MyEncrypter = Encrypter(config)
     MyDeEncrypter = DeEncrypter(config)
     
@@ -2630,14 +2667,14 @@ if __name__ == "__main__":
                         r"C:\ImageEncryption\images\img3.png",
                         r"C:\ImageEncryption\images\img4.png",
                         r"C:\ImageEncryption\images\img5.png",
-                        r"C:\ImageEncryption\images\img6.png",
-                        r"C:\ImageEncryption\images\img7.png",
-                        r"C:\ImageEncryption\images\img8.png"
+                        # r"C:\ImageEncryption\images\img6.png",
+                        # r"C:\ImageEncryption\images\img7.png",
+                        # r"C:\ImageEncryption\images\img8.png"
                         ])
     # result = analysis.encryption_decryption_test(show=True)
     #卡方检验 global_parallel_size居然会影响卡方检验的结果，取64不错
     # analysis.chi_square_test()
-    #直方图
+    #直方图 global_parallel_size取4 Mean=970最佳 size=8 Mean=973
     analysis.histogram_test(plot=True, show=True)
     #相关性分析
     # analysis.test_correlation(plot=False, show=True)

@@ -1,13 +1,13 @@
 # Fdb version 4
-["bibtex paper"] 1789006014.57516 "paper.aux" "paper.bbl" "paper" 1789006018.2618 0
+["bibtex paper"] 1789108027.78972 "paper.aux" "paper.bbl" "paper" 1789108031.36649 0
   "./reference.bib" 1788521096 22483 b9be3607eb880f0ec747cc96cd60f02c ""
   "c:/texlive/2026/texmf-dist/bibtex/bst/base/unsrt.bst" 1785483568 18030 1376b4b231b50c66211e47e42eda2875 ""
-  "paper.aux" 1789006016 4310 19cb040a0e9694d1270de3d82463ab4e "pdflatex"
+  "paper.aux" 1789108029 4612 d8d3a04a545160ec930dfd892fdae1d8 "pdflatex"
   (generated)
   "paper.bbl"
   "paper.blg"
   (rewritten before read)
-["pdflatex"] 1789006015.09938 "c:/ImageEncryption/mywork/docx/paper.tex" "paper.pdf" "paper" 1789006018.2627 0
+["pdflatex"] 1789108028.29052 "c:/ImageEncryption/mywork/docx/paper.tex" "paper.pdf" "paper" 1789108031.3672 0
   "c:/ImageEncryption/mywork/docx/paper.tex" 1788856750 770 ec2d76284850bb90a743598ca1cde7d5 ""
   "c:/Windows/Fonts/msyh.ttc" 1754559935 19704352 1e10e74402e59d54499af795caf0b135 ""
   "c:/Windows/Fonts/simhei.ttf" 1774943383 9745792 5c7fd3058dea9b77be5049ff7efa9f34 ""
@@ -267,10 +267,10 @@
   "chapters/abstract.tex" 1785492796 558 bcd65125cf735a10bd93314db179cfe1 ""
   "chapters/ch01_intro.tex" 1788521402 8448 268753f02a6ab507cacb64a32a0640bf ""
   "chapters/ch03.tex" 1788939043 4931 b8c2628953e9000879c709df0909b403 ""
-  "chapters/ch04_performance_analysis.tex" 1788942370 3234 47491bfc0f837eef9565ad5e381a70b9 ""
-  "paper.aux" 1789006016 4310 19cb040a0e9694d1270de3d82463ab4e "pdflatex"
-  "paper.bbl" 1789006015 11431 abdbe63e17a084fdfa959aaf831708f3 "bibtex paper"
-  "paper.out" 1789006016 677 f04dcc857314535a1a546319b9e7c7d9 "pdflatex"
+  "chapters/ch04_performance_analysis.tex" 1789108023 4149 ae181c9ca68b1e14878a3acc904c9686 ""
+  "paper.aux" 1789108029 4612 d8d3a04a545160ec930dfd892fdae1d8 "pdflatex"
+  "paper.bbl" 1789108028 11431 abdbe63e17a084fdfa959aaf831708f3 "bibtex paper"
+  "paper.out" 1789108029 677 f04dcc857314535a1a546319b9e7c7d9 "pdflatex"
   "paper.tex" 1788856750 770 ec2d76284850bb90a743598ca1cde7d5 ""
   (generated)
   "paper.aux"

@@ -56,16 +56,21 @@ def _parse_user_key_bits(user_key: str) -> np.ndarray:
 
 
 def normalize_user_key_v2(user_key: str | None) -> str:
-    """Return a validated 384-bit V2 user key, applying the default if needed."""
+    """Return a validated 384-bit V2 user key.
+
+    * ``None``          → 返回内置默认 384 位二进制密钥。
+    * 384 位二进制串    → 直接返回（教学/发表论文时保持确定性）。
+    * 其他任意字符串    → SHA-384 摘要转成 384 位二进制串，方便直接传
+      ``"round-0"``、``"round-1"`` 这类可变字符串做多轮加密取均值。
+    """
     if user_key is None:
         return DEFAULT_USER_KEY_BITS_V2
     if not isinstance(user_key, str):
-        raise TypeError("user_key must be a 384-character binary string")
-    if len(user_key) != 384:
-        raise ValueError("user_key must contain exactly 384 bits")
-    if any(bit not in "01" for bit in user_key):
-        raise ValueError("user_key must contain only '0' and '1'")
-    return user_key
+        raise TypeError("user_key must be a string")
+    if len(user_key) == 384 and all(bit in "01" for bit in user_key):
+        return user_key
+    digest = hashlib.sha384(user_key.encode("utf-8")).digest()
+    return "".join(f"{byte:08b}" for byte in digest)
 
 
 def _plaintext_bytes(plaintext_image: str | Path | np.ndarray) -> bytes:
