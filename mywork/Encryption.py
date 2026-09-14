@@ -489,8 +489,6 @@ class Encrypter:
 
     def set_cml(
         self,
-        image: str | Path | np.ndarray | pil_image.Image | None = None,
-        *,
         mu: float | None = None,
         v: float | None = None,
         alpha: float | None = None,
@@ -503,9 +501,6 @@ class Encrypter:
         ``resume_cml()`` restores that snapshot. The returned mapping contains
         the effective parameter values after the update.
         """
-        if image is not None:
-            self._initialize_cml(image)
-            self._cml_default_parameters = None
         if self._cml is None:
             raise RuntimeError("CML is not initialized; pass image=... to set_cml() first")
 

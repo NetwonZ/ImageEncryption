@@ -27,7 +27,7 @@ ENCRYPTION_CONFIG = EncryptionConfig(
     b_max=64,
     b_min=4,
     block_operation="xor",
-    global_parallel_size=8,
+    global_parallel_size=2,
     global_permutation_method="global_bit_permutation_v2",
 )
 
@@ -139,7 +139,8 @@ def run_encryption_decryption_test(show=True, save_path=None, dpi=150):
 
     for image_path in IMAGE_PATHS:
         # ---------- 加密 ----------
-        MyEncrypter.set_cml(image=image_path)   # 初始化图像依赖的混沌系统
+        # MyEncrypter.set_cml(image=image_path)   # 初始化图像依赖的混沌系统
+        MyEncrypter.set_user_key(image=image_path)  # 初始化图像依赖的 user_key
         start_time = time.perf_counter()
         encryption_result = MyEncrypter.encrypt(image_path, print_profile=False)
         encrypt_seconds = time.perf_counter() - start_time
@@ -282,11 +283,13 @@ def run_histogram_test(
         exact_per_round = []
         first_round_image = None
         first_round_hists = None
-
+        num_rounds = 20
         for round_idx in range(num_rounds):
-            MyEncrypter.set_user_key(f"202600{round_idx}", image=image_path)
+            MyEncrypter.set_user_key(f"HISTTEST-{round_idx}", image=image_path)
             if num_rounds == 1:
-                MyEncrypter.set_user_key()
+                MyEncrypter.set_user_key(image=image_path)
+            #使用这一组参数效果更是逆天好。
+            # MyEncrypter.set_cml(mu=5,v=20,alpha=5,beta=5)
             encryption_result = MyEncrypter.encrypt(image_path, print_profile=False)
             encrypted_image = encryption_result.encrypted_image
             metadata = encryption_result.metadata
@@ -486,11 +489,133 @@ def run_histogram_test(
     return run_data, fig
 
 
+try:
+    from scipy.stats import chi2 as chi2_dist
+except ImportError:
+    chi2_dist = None
+
+# ============================================================
+# 测试 3：卡方检验（Chi-Square Test）
+# ============================================================
+
+def calculate_chi_square(hist: np.ndarray, total_pixels: int) -> float:
+    """计算 256 阶灰度级直方图与均匀分布的卡方值 (df=255)。"""
+    expected = total_pixels / 256.0
+    return float(np.sum((hist - expected) ** 2 / expected))
+
+
+def run_chi_square_test(alpha=0.05):
+    """每张图循环 NUM_USER_KEY_ROUNDS 次不同 user_key 加密，计算密文卡方值并制表。
+
+    统计每个通道的卡方检验值并在多轮上取均值，判定是否通过卡方检验（均值 < 临界值）。
+    表格包含各通道卡方值、平均卡方值以及检验结果；最后一行给出全部图片的统计均值。
+    """
+    num_rounds = NUM_USER_KEY_ROUNDS
+    if num_rounds <= 0:
+        raise ValueError("NUM_USER_KEY_ROUNDS must be a positive integer")
+
+    # 计算显著性水平 alpha 下自由度 df=255 的卡方临界值 (α=0.05 时约 293.25)
+    if chi2_dist is not None:
+        critical_value = float(chi2_dist.ppf(1.0 - alpha, df=255))
+    else:
+        critical_value = 293.2478 if alpha == 0.05 else (310.4574 if alpha == 0.01 else 293.2478)
+
+    run_data = []
+
+    for image_path in IMAGE_PATHS:
+        original_image = load_rgb_image(image_path)
+        num_channels = original_image.shape[2]
+        channel_names = ["R", "G", "B"] if num_channels == 3 else ["Gray"]
+
+        chi2_per_round = []
+
+        num_rounds = 5
+        for round_idx in range(num_rounds):
+            MyEncrypter.set_user_key(f"CHI2TEST-{round_idx}", image=image_path)
+            if num_rounds == 1:
+                MyEncrypter.set_user_key()
+            encryption_result = MyEncrypter.encrypt(image_path, print_profile=False)
+            encrypted_image = encryption_result.encrypted_image
+            MyEncrypter.resume_user_key()
+
+            # 计算当轮各通道的直方图及卡方值
+            current_chi2 = {}
+            if num_channels == 3:
+                for i, name in enumerate(["R", "G", "B"]):
+                    channel_data = encrypted_image[..., i].ravel()
+                    hist = np.bincount(channel_data, minlength=256)
+                    current_chi2[name] = calculate_chi_square(hist, channel_data.size)
+            else:
+                gray_pixels = np.mean(encrypted_image, axis=2).astype(np.uint8).ravel()
+                hist = np.bincount(gray_pixels, minlength=256)
+                current_chi2["Gray"] = calculate_chi_square(hist, gray_pixels.size)
+
+            chi2_per_round.append(current_chi2)
+
+        # 对多轮的卡方值取平均
+        mean_chi2 = {}
+        for ch in channel_names:
+            values = [one_round[ch] for one_round in chi2_per_round]
+            mean_chi2[ch] = float(np.mean(values))
+
+        avg_chi2 = float(
+            np.mean([one_round[ch] for one_round in chi2_per_round for ch in channel_names])
+        )
+        mean_chi2["average"] = avg_chi2
+
+        # 判定是否通过卡方检验：所有通道均通过且平均值通过临界值判定
+        is_passed = all(mean_chi2[ch] < critical_value for ch in channel_names)
+
+        run_data.append({
+            "name": Path(image_path).name,
+            "encrypted_chi2": mean_chi2,
+            "channel_names": channel_names,
+            "passed": is_passed,
+        })
+
+    # ---------- 打印卡方检验表格 ----------
+    print("\nChi-Square test analysis")
+    print("------------------------")
+    print(f"Significance level (α): {alpha}, Critical value (df=255): {critical_value:.2f}")
+
+    channel_order = [c for c in ["R", "G", "B", "Gray"]
+                     if any(c in d["encrypted_chi2"] for d in run_data)]
+
+    table_rows = []
+    for data in run_data:
+        row = [data["name"]]
+        for ch in channel_order:
+            val = data["encrypted_chi2"].get(ch)
+            row.append(f"{val:.2f}" if val is not None else "-")
+        row.append(f"{data['encrypted_chi2']['average']:.2f}")
+        row.append("Pass" if data["passed"] else "Fail")
+        table_rows.append(row)
+
+    # 底部所有图像的统计均值行
+    mean_row = ["Mean"]
+    all_channel_values = []
+    for ch in channel_order:
+        values = [d["encrypted_chi2"][ch] for d in run_data if ch in d["encrypted_chi2"]]
+        mean_row.append(f"{np.mean(values):.2f}" if values else "-")
+        all_channel_values.extend(values)
+
+    total_mean_val = float(np.mean(all_channel_values))
+    mean_row.append(f"{total_mean_val:.2f}")
+    mean_row.append("Pass" if total_mean_val < critical_value else "Fail")
+    table_rows.append(mean_row)
+
+    headers = ("Image",) + tuple(f"{ch} χ²" for ch in channel_order) \
+              + ("Average χ²", f"Passed (α={alpha})")
+    print_table(headers, table_rows)
+
+    return run_data
 # ============================================================
 # 一键运行入口
 # ============================================================
 
 if __name__ == "__main__":
-    # 只跑你想看的测试，把注释去掉/加回来即可
     # run_encryption_decryption_test(show=True)
-    run_histogram_test(show=False, save_dir=FIGURE_DIR,save_subfigures=True)
+    
+    #size=8 只使用默认的V2秘钥 结果最好
+    run_histogram_test(show=False, save_dir=FIGURE_DIR,save_subfigures=False)
+    # run_chi_square_test(alpha=0.05)

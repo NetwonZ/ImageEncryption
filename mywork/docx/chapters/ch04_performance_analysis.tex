@@ -46,3 +46,23 @@ Ref4                   & --       & --         & 1041.58 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Chi-square ($\chi^2$) test results for RGB channels of cipher-images ($\alpha = 0.05$, critical value $\chi_{0.05}^2(255) = 293.25$)}
+\label{tab:chi_square}
+\begin{tabular}{lccccc}
+\toprule
+\multirow{2}{*}{Image} & \multicolumn{3}{c}{$\chi^2$ Score} & \multirow{2}{*}{Average} & \multirow{2}{*}{Result ($\alpha = 0.05$)} \\
+\cmidrule(lr){2-4}
+ & Red (R) & Green (G) & Blue (B) & & \\
+\midrule
+img1.png & 269.74 & 262.35 & 262.70 & 264.93 & Passed \\
+img2.png & 247.21 & 247.68 & 256.74 & 250.54 & Passed \\
+img3.png & 242.62 & 248.34 & 240.45 & 243.81 & Passed \\
+img4.png & 245.16 & 260.89 & 254.53 & 253.53 & Passed \\
+img5.png & 266.85 & 257.83 & 248.88 & 257.86 & Passed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
