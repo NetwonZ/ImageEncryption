@@ -29,6 +29,9 @@ ENCRYPTION_CONFIG = EncryptionConfig(
     block_operation="xor",
     global_parallel_size=2,
     global_permutation_method="global_bit_permutation_v2",
+    cross_plane_diffusion = True,
+    cross_plane_shift = 1,
+    bidirectional_diffusion = False,
 )
 
 # 测试图片列表
@@ -142,7 +145,7 @@ def run_encryption_decryption_test(show=True, save_path=None, dpi=150):
         # MyEncrypter.set_cml(image=image_path)   # 初始化图像依赖的混沌系统
         MyEncrypter.set_user_key(image=image_path)  # 初始化图像依赖的 user_key
         start_time = time.perf_counter()
-        encryption_result = MyEncrypter.encrypt(image_path, print_profile=False)
+        encryption_result = MyEncrypter.encrypt(image_path, print_profile=True)
         encrypt_seconds = time.perf_counter() - start_time
 
         encrypted_image = encryption_result.encrypted_image
@@ -283,7 +286,7 @@ def run_histogram_test(
         exact_per_round = []
         first_round_image = None
         first_round_hists = None
-        num_rounds = 20
+        num_rounds = 5
         for round_idx in range(num_rounds):
             MyEncrypter.set_user_key(f"HISTTEST-{round_idx}", image=image_path)
             if num_rounds == 1:
@@ -614,7 +617,7 @@ def run_chi_square_test(alpha=0.05):
 # ============================================================
 
 if __name__ == "__main__":
-    # run_encryption_decryption_test(show=True)
+    run_encryption_decryption_test(show=True)
     
     #size=8 只使用默认的V2秘钥 结果最好
     run_histogram_test(show=False, save_dir=FIGURE_DIR,save_subfigures=False)

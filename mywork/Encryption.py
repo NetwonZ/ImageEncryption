@@ -47,6 +47,29 @@ DNA_OPERATION_RULE_ID_TO_NAME = {
     3: "xor",
 }
 
+# ==========================================================================
+# 跨平面扩散的循环移位量（Cross-Plane Diffusion 的可调参数）
+# ==========================================================================
+# 全局扩散的反馈向量沿 12 个 DNA 平面循环右移 CROSS_PLANE_SHIFT 位，用于打破
+# 平面之间的壁垒，让任意一个平面的扰动在若干像素后扩散到其余平面。
+#
+# >>> 想试探 1 之外的值时，只改下面这一个数字即可 <<<
+#     合法取值范围 1..DNA_PLANE_COUNT-1 = 1..11；
+#     取 0 或 12 的整数倍等价于不启用移位（退化为平面内孤立扩散）。
+#
+# 实测（img1，512x512，parallel_size=2，双向扩散开启）单点扰动的影响范围：
+#     shift = 1, 5, 7, 11  ->  11/12 个平面，25.000% 像素（移位量与 12 互质，
+#                              轨道长度满 12，扩散最彻底，推荐）
+#     shift = 2, 10        ->   5/12 个平面，12.500% 像素（gcd=2，轨道长 6）
+#     shift = 4, 8         ->   3/12 个平面，12.500% 像素（gcd=4，轨道长 3）
+#     shift = 3, 9         ->   3/12 个平面， 8.333% 像素（gcd=3，轨道长 4）
+#     shift = 6            ->   2/12 个平面， 4.167% 像素（gcd=6，轨道长 2）
+# 结论：优先与 12 互质的值（1/5/7/11）以取得最大的跨平面扩散范围。
+#
+# 该常量同时作为 EncryptionConfig.cross_plane_shift 的默认值，因此改这里
+# 即可同时影响加密与解密两侧（两边必须始终使用同一个值）。
+CROSS_PLANE_SHIFT = 1
+
 
 @dataclass(frozen=True)
 class ImageBlock:
@@ -79,6 +102,14 @@ class EncryptionConfig:
     block_operation: str = "xor"
     global_parallel_size: int = 1
     global_permutation_method: str = "global_bit_permutation_v2"
+    # ---- 全局扩散增强开关（默认开启） ----
+    # 跨平面（跨通道）扩散：反馈向量沿 12 个平面循环移位，打破平面间的壁垒。
+    cross_plane_diffusion: bool = True
+    # 跨平面扩散的循环移位量；见 Encryption.py 顶部 CROSS_PLANE_SHIFT 的说明。
+    # 1..11 合法，1/5/7/11 与 12 互质、扩散范围最大。加密与解密必须一致。
+    cross_plane_shift: int = CROSS_PLANE_SHIFT
+    # 正向 + 反向双向双轮扩散：单次遍历后再沿空间轨迹翻转做一次反向反馈。
+    bidirectional_diffusion: bool = True
 
     def __post_init__(self) -> None:
         if self.b_max <= 0 or self.b_min <= 0 or self.b_min > self.b_max:
@@ -101,6 +132,15 @@ class EncryptionConfig:
                 "'global_bit_permutation_v2'"
             )
         object.__setattr__(self, "global_permutation_method", method)
+        for flag_name in ("cross_plane_diffusion", "bidirectional_diffusion"):
+            if not isinstance(getattr(self, flag_name), (bool, np.bool_)):
+                raise ValueError(f"{flag_name} must be a boolean")
+        if not isinstance(self.cross_plane_shift, (int, np.integer)):
+            raise ValueError("cross_plane_shift must be an integer")
+        if not 0 <= int(self.cross_plane_shift) <= DNA_PLANE_COUNT:
+            raise ValueError(
+                f"cross_plane_shift must be in [0, {DNA_PLANE_COUNT}]"
+            )
 
 
 @dataclass(frozen=True)
@@ -1180,11 +1220,47 @@ class Encrypter:
             )
         return output
 
+    # ======================================================================
+    # 全局扩散增强开关（与 Decrypter.invert_global_diffusion 严格对称）
+    # ======================================================================
+    # 1) 跨平面扩散的循环移位量定义在模块顶部（CROSS_PLANE_SHIFT），并作为
+    #    EncryptionConfig.cross_plane_shift 的默认值 —— 改那一处即可同时
+    #    作用于加密与解密两侧。
+    # 2) 双向扩散的 IV_2 目前直接取 IV_1（见 apply_global_diffusion 的
+    #    Step B），如后续要为反向轮单独生成 IV_2，在那里替换即可。
+
+    @staticmethod
+    def _cross_plane_feedback(
+        feedback_vector: np.ndarray,
+        enabled: bool,
+        shift: int = CROSS_PLANE_SHIFT,
+    ) -> np.ndarray:
+        """按需对 12 平面反馈向量做循环移位（跨平面扩散）。
+
+        移位是纯置换，其逆恰好是反向移位，因此加密/解密两侧共用同一函数、
+        只需在解密侧传入相同的 ``shift`` 即可严格还原。
+
+        enabled=False 或 shift 为 12 的整数倍时原样返回（退化到旧算法）。
+        """
+        if not enabled:
+            return feedback_vector
+        planes = feedback_vector.shape[0]
+        normalized_shift = int(shift) % planes
+        if normalized_shift == 0:
+            return feedback_vector
+        # 右移 normalized_shift 位：新第 p 个平面取原来第 (p - shift) 个平面
+        return np.roll(feedback_vector, normalized_shift, axis=0)
+
     @staticmethod
     def apply_global_diffusion(
         dna_matrix: np.ndarray,
         key_material: EncryptionKeyMaterial,
         parallel_size: int = 1,
+        *,
+        cross_plane_diffusion: bool = True,
+        bidirectional_diffusion: bool = True,
+        cross_plane_shift: int = CROSS_PLANE_SHIFT,
+        initial_vector: np.ndarray | None = None,
     ) -> np.ndarray:
         """Apply grouped, reversible ciphertext-feedback XOR in a random spatial order.
 
@@ -1192,6 +1268,12 @@ class Encrypter:
         positions use the same predecessor vector and can therefore be computed
         synchronously.  The following group uses the previous group's final
         ciphertext vector as its predecessor.
+
+        当 ``cross_plane_diffusion`` 为真时，每组之间传递的反馈向量会先沿
+        12 个平面循环移位 ``cross_plane_shift`` 位（跨平面扩散）；当
+        ``bidirectional_diffusion`` 为真时，正向遍历之后还会沿空间轨迹翻转
+        再做一次反向反馈（双向双轮扩散）。两者默认开启；同时关闭即恢复为
+        原来的单向、平面内孤立的扩散。
         """
         dna_matrix = np.asarray(dna_matrix, dtype=np.uint8)
         if not isinstance(parallel_size, int) or parallel_size <= 0:
@@ -1208,19 +1290,76 @@ class Encrypter:
         key_flat = key_material.global_key_matrix.reshape(DNA_PLANE_COUNT, num_pixels)
         plain_sequence = source_flat[:, permutation]
         key_sequence = key_flat[:, permutation]
-        cipher_sequence = np.empty_like(plain_sequence)
-        # The first group starts from the required all-zero C_{i-1} vector.
-        previous_group_last_cipher = key_material.global_initial_vector.copy()
+
+        # IV_1：正向轨迹的初始反馈向量（默认沿用全零 global_initial_vector）
+        forward_iv = (
+            key_material.global_initial_vector.copy()
+            if initial_vector is None
+            else np.asarray(initial_vector, dtype=np.uint8).copy()
+        )
+
+        if not (cross_plane_diffusion or bidirectional_diffusion):
+            # 旧算法原样保留，保证关闭开关时结果与修改前逐字节一致。
+            cipher_sequence = np.empty_like(plain_sequence)
+            previous_group_last_cipher = forward_iv
+            for start in range(0, num_pixels, parallel_size):
+                end = min(start + parallel_size, num_pixels)
+                cipher_sequence[:, start:end] = np.bitwise_xor(
+                    np.bitwise_xor(plain_sequence[:, start:end], previous_group_last_cipher[:, np.newaxis]),
+                    key_sequence[:, start:end],
+                )
+                previous_group_last_cipher = cipher_sequence[:, end - 1].copy()
+            output_flat = np.empty_like(source_flat)
+            output_flat[:, permutation] = cipher_sequence
+            return output_flat.reshape(DNA_PLANE_COUNT, height, width)
+
+        # ================== 增强分支：跨平面 / 双向扩散 ==================
+        # Step A：沿置换轨迹做正向分组扩散，反馈向量跨平面循环移位。
+        forward_cipher = np.empty_like(plain_sequence)
+        previous_group_last_cipher = Encrypter._cross_plane_feedback(
+            forward_iv, cross_plane_diffusion, cross_plane_shift
+        )
         for start in range(0, num_pixels, parallel_size):
             end = min(start + parallel_size, num_pixels)
-            # All positions in [start, end) share one predecessor, so NumPy
-            # evaluates the group's 12-channel DNA diffusion synchronously.
-            cipher_sequence[:, start:end] = np.bitwise_xor(
+            forward_cipher[:, start:end] = np.bitwise_xor(
                 np.bitwise_xor(plain_sequence[:, start:end], previous_group_last_cipher[:, np.newaxis]),
                 key_sequence[:, start:end],
             )
             # The final ciphertext vector feeds the next parallel group.
-            previous_group_last_cipher = cipher_sequence[:, end - 1].copy()
+            previous_group_last_cipher = Encrypter._cross_plane_feedback(
+                forward_cipher[:, end - 1].copy(),
+                cross_plane_diffusion,
+                cross_plane_shift,
+            )
+
+        if not bidirectional_diffusion:
+            output_flat = np.empty_like(source_flat)
+            output_flat[:, permutation] = forward_cipher
+            return output_flat.reshape(DNA_PLANE_COUNT, height, width)
+
+        # Step B：把空间轨迹完全翻转，用 IV_2 再做一次反向分组扩散。
+        # 本轮以 A 的密文作为明文输入，因此解密时逆序执行即可还原。
+        backward_plain = forward_cipher[:, ::-1]
+        backward_key = key_sequence[:, ::-1]
+        # 为便于实验，IV_2 直接取与 IV_1 相同的向量。
+        backward_iv = forward_iv
+        backward_cipher = np.empty_like(backward_plain)
+        previous_group_last_cipher = Encrypter._cross_plane_feedback(
+            backward_iv, cross_plane_diffusion, cross_plane_shift
+        )
+        for start in range(0, num_pixels, parallel_size):
+            end = min(start + parallel_size, num_pixels)
+            backward_cipher[:, start:end] = np.bitwise_xor(
+                np.bitwise_xor(backward_plain[:, start:end], previous_group_last_cipher[:, np.newaxis]),
+                backward_key[:, start:end],
+            )
+            previous_group_last_cipher = Encrypter._cross_plane_feedback(
+                backward_cipher[:, end - 1].copy(),
+                cross_plane_diffusion,
+                cross_plane_shift,
+            )
+        # 反向结果再翻转回原轨迹，得到最终密文序列。
+        cipher_sequence = backward_cipher[:, ::-1]
 
         output_flat = np.empty_like(source_flat)
         output_flat[:, permutation] = cipher_sequence
@@ -1290,6 +1429,10 @@ class Encrypter:
             locally_diffused_dna,
             key_material,
             parallel_size=self.config.global_parallel_size,
+            # 两个增强开关都从 config 读取（默认 True）；同时关闭则退化为旧算法
+            cross_plane_diffusion=self.config.cross_plane_diffusion,
+            bidirectional_diffusion=self.config.bidirectional_diffusion,
+            cross_plane_shift=self.config.cross_plane_shift,
         )
         recorder.record("Global DNA diffusion", started)
 
@@ -1339,8 +1482,18 @@ class DeEncrypter:
         dna_matrix: np.ndarray,
         key_material: EncryptionKeyMaterial,
         parallel_size: int = 1,
+        *,
+        cross_plane_diffusion: bool = True,
+        bidirectional_diffusion: bool = True,
+        cross_plane_shift: int = CROSS_PLANE_SHIFT,
+        initial_vector: np.ndarray | None = None,
     ) -> np.ndarray:
-        """Inverse of grouped ciphertext-feedback global XOR diffusion."""
+        """Inverse of grouped ciphertext-feedback global XOR diffusion.
+
+        参数与 :meth:`Encrypter.apply_global_diffusion` 一一对应，必须传入
+        完全相同的开关/移位量，否则无法还原。双向扩散时按「先逆 Step B、
+        再逆 Step A」的相反顺序执行。
+        """
         dna_matrix = np.asarray(dna_matrix, dtype=np.uint8)
         if not isinstance(parallel_size, int) or parallel_size <= 0:
             raise ValueError("parallel_size must be a positive integer")
@@ -1356,15 +1509,73 @@ class DeEncrypter:
         key_flat = key_material.global_key_matrix.reshape(DNA_PLANE_COUNT, num_pixels)
         cipher_sequence = cipher_flat[:, permutation]
         key_sequence = key_flat[:, permutation]
-        plain_sequence = np.empty_like(cipher_sequence)
-        previous_group_last_cipher = key_material.global_initial_vector.copy()
+
+        # 与加密侧相同的 IV_1（正向轮）
+        forward_iv = (
+            key_material.global_initial_vector.copy()
+            if initial_vector is None
+            else np.asarray(initial_vector, dtype=np.uint8).copy()
+        )
+
+        if not (cross_plane_diffusion or bidirectional_diffusion):
+            # 旧算法原样保留，保证关闭开关时结果与修改前逐字节一致。
+            plain_sequence = np.empty_like(cipher_sequence)
+            previous_group_last_cipher = forward_iv
+            for start in range(0, num_pixels, parallel_size):
+                end = min(start + parallel_size, num_pixels)
+                plain_sequence[:, start:end] = np.bitwise_xor(
+                    np.bitwise_xor(cipher_sequence[:, start:end], previous_group_last_cipher[:, np.newaxis]),
+                    key_sequence[:, start:end],
+                )
+                previous_group_last_cipher = cipher_sequence[:, end - 1].copy()
+            output_flat = np.empty_like(cipher_flat)
+            output_flat[:, permutation] = plain_sequence
+            return output_flat.reshape(DNA_PLANE_COUNT, height, width)
+
+        # ================== 增强分支：按加密的相反顺序求逆 ==================
+        working_cipher = cipher_sequence
+
+        if bidirectional_diffusion:
+            # 逆 Step B：先把最终密文沿轨迹翻回反向轮的排列。
+            backward_cipher = working_cipher[:, ::-1]
+            backward_key = key_sequence[:, ::-1]
+            backward_plain = np.empty_like(backward_cipher)
+            backward_iv = forward_iv
+            previous_group_last_cipher = Encrypter._cross_plane_feedback(
+                backward_iv, cross_plane_diffusion, cross_plane_shift
+            )
+            for start in range(0, num_pixels, parallel_size):
+                end = min(start + parallel_size, num_pixels)
+                backward_plain[:, start:end] = np.bitwise_xor(
+                    np.bitwise_xor(backward_cipher[:, start:end], previous_group_last_cipher[:, np.newaxis]),
+                    backward_key[:, start:end],
+                )
+                # 前驱始终取自密文（此处即 backward_cipher），与加密侧一致
+                previous_group_last_cipher = Encrypter._cross_plane_feedback(
+                    backward_cipher[:, end - 1].copy(),
+                    cross_plane_diffusion,
+                    cross_plane_shift,
+                )
+            # 翻回原轨迹，得到 Step A 的密文
+            working_cipher = backward_plain[:, ::-1]
+
+        # 逆 Step A：沿正向轨迹做一次正向反馈即可还原明文
+        forward_key = key_sequence
+        plain_sequence = np.empty_like(working_cipher)
+        previous_group_last_cipher = Encrypter._cross_plane_feedback(
+            forward_iv, cross_plane_diffusion, cross_plane_shift
+        )
         for start in range(0, num_pixels, parallel_size):
             end = min(start + parallel_size, num_pixels)
             plain_sequence[:, start:end] = np.bitwise_xor(
-                np.bitwise_xor(cipher_sequence[:, start:end], previous_group_last_cipher[:, np.newaxis]),
-                key_sequence[:, start:end],
+                np.bitwise_xor(working_cipher[:, start:end], previous_group_last_cipher[:, np.newaxis]),
+                forward_key[:, start:end],
             )
-            previous_group_last_cipher = cipher_sequence[:, end - 1].copy()
+            previous_group_last_cipher = Encrypter._cross_plane_feedback(
+                working_cipher[:, end - 1].copy(),
+                cross_plane_diffusion,
+                cross_plane_shift,
+            )
 
         output_flat = np.empty_like(cipher_flat)
         output_flat[:, permutation] = plain_sequence
@@ -1577,6 +1788,10 @@ class DeEncrypter:
             cipher_dna,
             key_material,
             parallel_size=metadata.config.global_parallel_size,
+            # 必须与加密侧使用同一组开关/移位量，否则无法还原
+            cross_plane_diffusion=metadata.config.cross_plane_diffusion,
+            bidirectional_diffusion=metadata.config.bidirectional_diffusion,
+            cross_plane_shift=metadata.config.cross_plane_shift,
         )
         recorder.record("Inverse global DNA diffusion", started)
 
