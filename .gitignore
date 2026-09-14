@@ -1,6 +1,6 @@
 __pycache__/
 .vscode/
-image/
+images/
 mywork/__pycache__/
 mywork/.vscode/
 mywork/.claude/
@@ -9,6 +9,8 @@ mywork/output/
 mywork/outputs/
 mywork/images/
 mywork/figures/
+mywork/figure/
+mywork/docx/paper.pdf
 papers/__pycache__/
 papers/.vscode/
 papers/

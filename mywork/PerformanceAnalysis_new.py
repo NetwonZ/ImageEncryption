@@ -13,6 +13,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image as pil_image
+from sympy import im
 
 from .Encryption import Encrypter, DeEncrypter, EncryptionConfig
 
@@ -44,13 +45,13 @@ IMAGE_PATHS = [
 FIGURE_DIR = Path(__file__).resolve().parent / "figures"
 
 # 直方图样式参数
-HIST_DPI = 300                     # 保存图片的 DPI
+HIST_DPI = 100                     # 保存图片的 DPI
 HIST_FONT_FAMILY = "Times New Roman"
 HIST_BAR_ALPHA = 0.6               # RGB 三通道直方图重叠时的透明度
 HIST_USE_REFERENCE_STYLE = True    # 使用带网格的论文风格
 
 # 直方图多轮密钥轮次：设为 5 表示每张图用 5 个不同 user_key 各加密一次，HV 取平均
-NUM_USER_KEY_ROUNDS = 5
+NUM_USER_KEY_ROUNDS = 1
 
 # ============================================================
 # 初始化加密器/解密器（全局唯一，直接用）
@@ -224,12 +225,29 @@ def run_encryption_decryption_test(show=True, save_path=None, dpi=150):
 # 测试 2：直方图 + 直方图方差 HV
 # ============================================================
 
-def run_histogram_test(show=True, save_dir=None):
+from datetime import datetime
+from pathlib import Path
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+def run_histogram_test(
+    show=True,
+    save_dir=None,
+    show_sublabels=False,
+    save_subfigures=False,
+):
     """每张图循环 NUM_USER_KEY_ROUNDS 次不同 user_key 加密，HV 取均值后画图+做表。
 
     彩色图统一 4 列：原图 | RGB 原图直方图 | 密文（第 0 轮） | RGB 密文直方图（第 0 轮）。
     灰度图会先把密文转成灰度再统计，画图也按 RGB 处理。
     表格里每个通道的 HV 是该图在所有轮次上的均值；最后一行是多张图的通道均值+总体均值。
+
+    参数:
+        show: 是否调用 plt.show() 展示图形。
+        save_dir: 拼接总大图保存目录，为 None 时不保存总图。
+        show_sublabels: 控制每个子图下方 (a), (b), ... 标签是否显示，默认 False（不开启）。
+        save_subfigures: 是否在 'mywork/figure/' 下新建独立目录并逐一导出单个子图，默认 False（不开启）。
     """
     num_rounds = NUM_USER_KEY_ROUNDS
     if num_rounds <= 0:
@@ -260,15 +278,13 @@ def run_histogram_test(show=True, save_dir=None):
             original_hists["Gray"] = np.bincount(gray.ravel(), minlength=256)
 
         # ---------- 多轮不同 user_key 加密，统计 HV ----------
-        # hv_per_round[round_idx][channel] = 该轮该通道的 HV
         hv_per_round = []
         exact_per_round = []
-        first_round_image = None   # 第 0 轮的密文图，用于画图
-        first_round_hists = None   # 第 0 轮的密文直方图，用于画图
+        first_round_image = None
+        first_round_hists = None
 
         for round_idx in range(num_rounds):
-  
-            MyEncrypter.set_user_key(f"202600{i}", image=image_path)
+            MyEncrypter.set_user_key(f"202600{round_idx}", image=image_path)
             if num_rounds == 1:
                 MyEncrypter.set_user_key()
             encryption_result = MyEncrypter.encrypt(image_path, print_profile=False)
@@ -280,7 +296,7 @@ def run_histogram_test(show=True, save_dir=None):
             )
             decrypted_image = decryption_result.decrypted_image
             exact_per_round.append(np.array_equal(original_image, decrypted_image))
-            MyEncrypter.resume_user_key()  # 恢复默认 user_key 并清空 CML 状态
+            MyEncrypter.resume_user_key()
 
             # 计算当轮密文的直方图和 HV
             current_hists = {}
@@ -301,8 +317,6 @@ def run_histogram_test(show=True, save_dir=None):
                 first_round_image = encrypted_image
                 first_round_hists = current_hists
 
-        # hv_per_round 现在是 [{"R":..., "G":..., "B":...}, {"R":..., ...}, ...]
-        # 算出每个通道在多轮上的均值，以及一张图的 average
         mean_hv = {}
         for ch in channel_names:
             values = [one_round[ch] for one_round in hv_per_round]
@@ -315,14 +329,14 @@ def run_histogram_test(show=True, save_dir=None):
             "name": Path(image_path).name,
             "original_image": original_image,
             "original_hists": original_hists,
-            "encrypted_image": first_round_image,      # 第 0 轮画图用
-            "encrypted_hists": first_round_hists,      # 第 0 轮画图用
-            "encrypted_hv": mean_hv,                   # 表格用：已对各轮取平均
+            "encrypted_image": first_round_image,
+            "encrypted_hists": first_round_hists,
+            "encrypted_hv": mean_hv,
             "channel_names": channel_names,
             "exact_recovery": all(exact_per_round),
         })
 
-    # ---------- 打印 HV 表格（各轮均值 + 底部总均值行） ----------
+    # ---------- 打印 HV 表格 ----------
     print("\nHistogram analysis")
     print("------------------")
     channel_order = [c for c in ["R", "G", "B", "Gray"]
@@ -338,7 +352,6 @@ def run_histogram_test(show=True, save_dir=None):
         row.append("Yes" if data["exact_recovery"] else "No")
         table_rows.append(row)
 
-    #这张图上每列通道的均值 + 所有图的总体均值（把所有轮次所有通道的值都平均）
     mean_row = ["Mean"]
     all_channel_values = []
     for ch in channel_order:
@@ -353,14 +366,15 @@ def run_histogram_test(show=True, save_dir=None):
               + ("Average HV", "Exact Recovery")
     print_table(headers, table_rows)
 
-    # ---------- 画直方图（只画第 0 轮的密文） ----------
-    max_columns = 4  # 所有图片统一：原图 | 原图直方图 | 密文 | 密文直方图
+    # ---------- 画直方图 ----------
+    max_columns = 4
     num_rows = len(run_data)
+    rect_bottom = 0.035 if show_sublabels else 0.0
     fig, axes = plt.subplots(
         num_rows, max_columns,
         figsize=(2.55 * max_columns, 2.6 * num_rows),
         squeeze=False,
-        constrained_layout={"rect": (0.0, 0.035, 1.0, 1.0)},
+        constrained_layout={"rect": (0.0, rect_bottom, 1.0, 1.0)},
     )
 
     if HIST_USE_REFERENCE_STYLE:
@@ -377,14 +391,14 @@ def run_histogram_test(show=True, save_dir=None):
 
     panel_index = 0
     for row_idx, data in enumerate(run_data):
-        # ---- 1. 原图 ----
+        # 1. 原图
         ax = axes[row_idx, 0]
         ax.imshow(data["original_image"])
         ax.set_xticks([])
         ax.set_yticks([])
         ax._caption_text = number_to_letters(panel_index); panel_index += 1
 
-        # ---- 2. 原图直方图 ----
+        # 2. 原图直方图
         ax = axes[row_idx, 1]
         palette = rgb_colors if len(data["channel_names"]) == 3 else gray_colors
         for name, hist in data["original_hists"].items():
@@ -397,14 +411,14 @@ def run_histogram_test(show=True, save_dir=None):
         ax.set_axisbelow(True)
         ax._caption_text = number_to_letters(panel_index); panel_index += 1
 
-        # ---- 3. 密文图 ----
+        # 3. 密文图
         ax = axes[row_idx, 2]
         ax.imshow(data["encrypted_image"])
         ax.set_xticks([])
         ax.set_yticks([])
         ax._caption_text = number_to_letters(panel_index); panel_index += 1
 
-        # ---- 4. 密文直方图 ----
+        # 4. 密文直方图
         ax = axes[row_idx, 3]
         palette = encrypted_rgb_colors if len(data["channel_names"]) == 3 else encrypted_gray_colors
         for name, hist in data["encrypted_hists"].items():
@@ -417,29 +431,48 @@ def run_histogram_test(show=True, save_dir=None):
         ax.set_axisbelow(True)
         ax._caption_text = number_to_letters(panel_index); panel_index += 1
 
-    # 把每一行小图的 (a)(b)(c)(d) 标在同一水平线上
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
-    for row_axes in axes:
-        bottoms = []
-        for ax in row_axes:
-            if hasattr(ax, "_caption_text"):
-                bottoms.append(ax.get_window_extent(renderer).y0)
-        if not bottoms:
-            continue
-        baseline = min(bottoms) - 6.0 * fig.dpi / 72.0
-        for ax in row_axes:
-            text = getattr(ax, "_caption_text", None)
-            if text is None:
-                continue
-            bbox = ax.get_window_extent(renderer)
-            fig.text(
-                (bbox.x0 + bbox.x1) / 2.0 / fig.bbox.width,
-                baseline / fig.bbox.height,
-                text,
-                ha="center", va="top", fontsize=11,
-            )
 
+    # ---------- 按需绘制 (a), (b)... 子图标号 ----------
+    if show_sublabels:
+        for row_axes in axes:
+            bottoms = []
+            for ax in row_axes:
+                if hasattr(ax, "_caption_text"):
+                    bottoms.append(ax.get_window_extent(renderer).y0)
+            if not bottoms:
+                continue
+            baseline = min(bottoms) - 6.0 * fig.dpi / 72.0
+            for ax in row_axes:
+                text = getattr(ax, "_caption_text", None)
+                if text is None:
+                    continue
+                bbox = ax.get_window_extent(renderer)
+                fig.text(
+                    (bbox.x0 + bbox.x1) / 2.0 / fig.bbox.width,
+                    baseline / fig.bbox.height,
+                    text,
+                    ha="center", va="top", fontsize=11,
+                )
+
+    # ---------- 逐个子图单独保存至 mywork/figure/<timestamp> ----------
+    if save_subfigures:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target_dir = Path("mywork/figures") / f"single_plots_{timestamp}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        col_suffixes = ["orig", "orig_hist", "cipher", "cipher_hist"]
+        for row_idx, data in enumerate(run_data):
+            stem = Path(data["name"]).stem
+            for col_idx in range(max_columns):
+                ax = axes[row_idx, col_idx]
+                bbox = ax.get_tightbbox(renderer).transformed(fig.dpi_scale_trans.inverted())
+                out_path = target_dir / f"{stem}_{col_suffixes[col_idx]}.png"
+                fig.savefig(out_path, bbox_inches=bbox, dpi=HIST_DPI, facecolor="white")
+        print(f"saved individual subfigures to: {target_dir}")
+
+    # ---------- 保存整张拼接图 ----------
     if save_dir is not None:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -460,4 +493,4 @@ def run_histogram_test(show=True, save_dir=None):
 if __name__ == "__main__":
     # 只跑你想看的测试，把注释去掉/加回来即可
     # run_encryption_decryption_test(show=True)
-    run_histogram_test(show=False, save_dir=FIGURE_DIR)
+    run_histogram_test(show=False, save_dir=FIGURE_DIR,save_subfigures=True)
