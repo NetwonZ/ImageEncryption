@@ -27,11 +27,11 @@ ENCRYPTION_CONFIG = EncryptionConfig(
     b_max=64,
     b_min=4,
     block_operation="xor",
-    global_parallel_size=2,
+    global_parallel_size=32,
     global_permutation_method="global_bit_permutation_v2",
     cross_plane_diffusion = True,
     cross_plane_shift = 1,
-    bidirectional_diffusion = False,
+    bidirectional_diffusion = True,
 )
 
 # 测试图片列表
@@ -41,7 +41,7 @@ IMAGE_PATHS = [
     r"C:\ImageEncryption\images\img3.png",
     r"C:\ImageEncryption\images\img4.png",
     r"C:\ImageEncryption\images\img5.png",
-    # r"C:\ImageEncryption\images\img6.png",  # 需要时解开注释
+    # r"C:\ImageEncryption\images\img6.png",  
 ]
 
 # 直方图输出目录（histogram_grid.png 会存在这里）
@@ -617,7 +617,7 @@ def run_chi_square_test(alpha=0.05):
 # ============================================================
 
 if __name__ == "__main__":
-    run_encryption_decryption_test(show=True)
+    # run_encryption_decryption_test(show=True)
     
     #size=8 只使用默认的V2秘钥 结果最好
     run_histogram_test(show=False, save_dir=FIGURE_DIR,save_subfigures=False)

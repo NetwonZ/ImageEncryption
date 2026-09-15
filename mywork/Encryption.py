@@ -1314,10 +1314,22 @@ class Encrypter:
             return output_flat.reshape(DNA_PLANE_COUNT, height, width)
 
         # ================== 增强分支：跨平面 / 双向扩散 ==================
+        # 在循环外预计算跨平面右移的索引映射，避免在每个分组中调用
+        # np.roll、执行静态方法查找以及创建多余的 12 元素临时数组。
+        normalized_shift = int(cross_plane_shift) % DNA_PLANE_COUNT
+        if cross_plane_diffusion and normalized_shift:
+            feedback_indices = (
+                np.arange(DNA_PLANE_COUNT) - normalized_shift
+            ) % DNA_PLANE_COUNT
+        else:
+            feedback_indices = None
+
         # Step A：沿置换轨迹做正向分组扩散，反馈向量跨平面循环移位。
         forward_cipher = np.empty_like(plain_sequence)
-        previous_group_last_cipher = Encrypter._cross_plane_feedback(
-            forward_iv, cross_plane_diffusion, cross_plane_shift
+        previous_group_last_cipher = (
+            forward_iv[feedback_indices]
+            if feedback_indices is not None
+            else forward_iv
         )
         for start in range(0, num_pixels, parallel_size):
             end = min(start + parallel_size, num_pixels)
@@ -1326,10 +1338,10 @@ class Encrypter:
                 key_sequence[:, start:end],
             )
             # The final ciphertext vector feeds the next parallel group.
-            previous_group_last_cipher = Encrypter._cross_plane_feedback(
-                forward_cipher[:, end - 1].copy(),
-                cross_plane_diffusion,
-                cross_plane_shift,
+            previous_group_last_cipher = (
+                forward_cipher[feedback_indices, end - 1]
+                if feedback_indices is not None
+                else forward_cipher[:, end - 1]
             )
 
         if not bidirectional_diffusion:
@@ -1344,8 +1356,10 @@ class Encrypter:
         # 为便于实验，IV_2 直接取与 IV_1 相同的向量。
         backward_iv = forward_iv
         backward_cipher = np.empty_like(backward_plain)
-        previous_group_last_cipher = Encrypter._cross_plane_feedback(
-            backward_iv, cross_plane_diffusion, cross_plane_shift
+        previous_group_last_cipher = (
+            backward_iv[feedback_indices]
+            if feedback_indices is not None
+            else backward_iv
         )
         for start in range(0, num_pixels, parallel_size):
             end = min(start + parallel_size, num_pixels)
@@ -1353,10 +1367,10 @@ class Encrypter:
                 np.bitwise_xor(backward_plain[:, start:end], previous_group_last_cipher[:, np.newaxis]),
                 backward_key[:, start:end],
             )
-            previous_group_last_cipher = Encrypter._cross_plane_feedback(
-                backward_cipher[:, end - 1].copy(),
-                cross_plane_diffusion,
-                cross_plane_shift,
+            previous_group_last_cipher = (
+                backward_cipher[feedback_indices, end - 1]
+                if feedback_indices is not None
+                else backward_cipher[:, end - 1]
             )
         # 反向结果再翻转回原轨迹，得到最终密文序列。
         cipher_sequence = backward_cipher[:, ::-1]
