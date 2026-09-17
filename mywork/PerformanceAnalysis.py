@@ -1522,47 +1522,73 @@ class Analysis:
             )
 
         if print_result:
-            self._print_heading("Adjacent-pixel correlation")
+            self._print_heading("Adjacent-pixel correlation coefficients")
+            channel_order = ("R", "G", "B")
             table_rows = []
+            column_values = {
+                direction: {channel: [] for channel in channel_order}
+                for direction in _DIRECTIONS
+            }
+
             for result in results:
-                direction_values = {direction: [] for direction in _DIRECTIONS}
-                for channel, directions in result["encrypted"].items():
-                    for direction, value in directions.items():
-                        direction_values[direction].append(value)
-                    mean_absolute = float(np.mean([abs(value) for value in directions.values()]))
-                    table_rows.append(
-                        (
-                            Path(result["image"]).name,
-                            channel,
-                            self._format_number(directions["horizontal"]),
-                            self._format_number(directions["vertical"]),
-                            self._format_number(directions["diagonal"]),
-                            self._format_number(mean_absolute),
-                            self._yes_no(result["exact_recovery"]),
-                        )
+                coefficients = result["encrypted"]
+                row = [Path(result["image"]).stem]
+                for direction in _DIRECTIONS:
+                    for channel in channel_order:
+                        value = coefficients[channel][direction]
+                        column_values[direction][channel].append(value)
+                        row.append(self._format_number(value, 4))
+                table_rows.append(tuple(row))
+
+            mean_row = ["Mean"]
+            for direction in _DIRECTIONS:
+                for channel in channel_order:
+                    values = column_values[direction][channel]
+                    mean_row.append(
+                        self._format_number(float(np.mean(values)), 4)
+                        if values
+                        else "N/A"
                     )
-                table_rows.append(
-                    (
-                        Path(result["image"]).name,
-                        "Average",
-                        self._format_number(float(np.mean(direction_values["horizontal"]))),
-                        self._format_number(float(np.mean(direction_values["vertical"]))),
-                        self._format_number(float(np.mean(direction_values["diagonal"]))),
-                        self._format_number(result["encrypted_mean_absolute"]),
-                        self._yes_no(result["exact_recovery"]),
-                    )
-                )
+            table_rows.append(tuple(mean_row))
+
             _print_ascii_table(
                 (
-                    "Image",
-                    "Channel",
-                    "Horizontal r",
-                    "Vertical r",
-                    "Diagonal r",
-                    "Mean Abs(r)",
-                    "Exact Recovery",
+                    "Images",
+                    "H-R",
+                    "H-G",
+                    "H-B",
+                    "V-R",
+                    "V-G",
+                    "V-B",
+                    "D-R",
+                    "D-G",
+                    "D-B",
                 ),
                 table_rows,
+            )
+
+            direction_means = {
+                direction: float(
+                    np.mean(
+                        [
+                            value
+                            for channel in channel_order
+                            for value in column_values[direction][channel]
+                        ]
+                    )
+                )
+                for direction in _DIRECTIONS
+            }
+            _print_ascii_table(
+                ("Metric", "H", "V", "D"),
+                [
+                    (
+                        "Algorithm mean",
+                        self._format_number(direction_means["horizontal"], 4),
+                        self._format_number(direction_means["vertical"], 4),
+                        self._format_number(direction_means["diagonal"], 4),
+                    )
+                ],
             )
         return results
 

@@ -1,6 +1,7 @@
 __pycache__/
 .vscode/
 images/
+figures/
 mywork/__pycache__/
 mywork/.vscode/
 mywork/.claude/

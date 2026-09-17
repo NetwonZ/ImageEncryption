@@ -511,7 +511,7 @@ class Encrypter:
         user_key: str | None = None,
         cml: SalomoncouplingCML | None = None,
     ) -> None:
-        from .KeyStream import normalize_user_key_v2,DEFAULT_USER_KEY_BITS,DEFAULT_USER_KEY_BITS_V2
+        from .KeyStream import normalize_user_key_v3
 
         self.config = config or EncryptionConfig()
         if global_permutation_method is not None:
@@ -523,7 +523,7 @@ class Encrypter:
         self._cml_source_array: np.ndarray | None = None
         self._cml_default_parameters: dict[str, float] | None = None
         self._user_key_snapshot: str | None = None
-        self.user_key = DEFAULT_USER_KEY_BITS_V2
+        self.user_key = normalize_user_key_v3(user_key)
         if key_source is not None:
             self._initialize_cml(key_source)
 
@@ -587,10 +587,10 @@ class Encrypter:
         *,
         image: str | Path | np.ndarray | pil_image.Image | None = None,
     ) -> str:
-        """Temporarily replace the 384-bit V2 user key and rebuild the CML."""
-        from .KeyStream import normalize_user_key_v2
+        """Temporarily replace the 512-bit V3 user key and rebuild the CML."""
+        from .KeyStream import normalize_user_key_v3
 
-        normalized_key = normalize_user_key_v2(user_key)
+        normalized_key = normalize_user_key_v3(user_key)
         if self._user_key_snapshot is None:
             self._user_key_snapshot = self.user_key
         self.user_key = normalized_key

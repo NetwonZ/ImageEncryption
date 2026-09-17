@@ -41,6 +41,30 @@ DEFAULT_USER_KEY_BITS_V2 = (
 
 assert len(DEFAULT_USER_KEY_BITS_V2) == 384
 
+# V3 默认外部密钥（512 位二进制串）。与 V1/V2 相互独立，避免改变
+# keystream_generation() / keystream_generation_v2() 的既有行为。
+# 16 进制（128 个 hex 字符 = 512 bit）：
+#   93a22b38c8f71ebc e38796345cbfd56f 38cd9bb6e1da6478 dc6490675f6cc5c2
+#   e73703ed9db9c85e 0e42499519f50a34 8c8ab306d1cd789a 530977aaf7afb03b
+DEFAULT_USER_KEY_BITS_V3 = (
+    "1001001110100010001010110011100011001000111101110001111010111100"
+    "1110001110000111100101100011010001011100101111111101010101101111"
+    "0011100011001101100110111011011011100001110110100110010001111000"
+    "1101110001100100100100000110011101011111011011001100010111000010"
+    "1110011100110111000000111110110110011101101110011100100001011110"
+    "0000111001000010010010011001010100011001111101010000101000110100"
+    "1000110010001010101100110000011011010001110011010111100010011010"
+    "0101001100001001011101111010101011110111101011111011000000111011"
+)
+DEFAULT_USER_KEY_HEX_V3 = (
+    "93a22b38c8f71ebce38796345cbfd56f"
+    "38cd9bb6e1da6478dc6490675f6cc5c2"
+    "e73703ed9db9c85e0e42499519f50a34"
+    "8c8ab306d1cd789a530977aaf7afb03b"
+)
+assert len(DEFAULT_USER_KEY_BITS_V3) == 512
+assert int(DEFAULT_USER_KEY_BITS_V3, 2) == int(DEFAULT_USER_KEY_HEX_V3, 16)
+
 # 使用高精度浮点，避免在中间迭代阶段过早退化到双精度
 mp.mp.dps = 80
 
@@ -72,6 +96,24 @@ def normalize_user_key_v2(user_key: str | None) -> str:
     if len(user_key) == 384 and all(bit in "01" for bit in user_key):
         return user_key
     digest = hashlib.sha384(user_key.encode("utf-8")).digest()
+    return "".join(f"{byte:08b}" for byte in digest)
+
+
+def normalize_user_key_v3(user_key: str | None) -> str:
+    """Return a validated 512-bit V3 user key.
+
+    * ``None``          → 返回内置默认 512 位二进制密钥。
+    * 512 位二进制串    → 直接返回（教学/发表论文时保持确定性）。
+    * 其他任意字符串    → SHA-512 摘要转成 512 位二进制串，方便直接传
+      ``"round-0"``、``"round-1"`` 这类可变字符串做多轮加密取均值。
+    """
+    if user_key is None:
+        return DEFAULT_USER_KEY_BITS_V3
+    if not isinstance(user_key, str):
+        raise TypeError("user_key must be a string")
+    if len(user_key) == 512 and all(bit in "01" for bit in user_key):
+        return user_key
+    digest = hashlib.sha512(user_key.encode("utf-8")).digest()
     return "".join(f"{byte:08b}" for byte in digest)
 
 
@@ -391,6 +433,116 @@ def keystream_generation_v2(
 # Keep a spelling with an explicit capital V2 for callers following the paper's
 # naming while using PEP 8 naming internally.
 keystream_generation_V2 = keystream_generation_v2
+
+
+def _derive_chaos_parameters_v3(plaintext_bytes: bytes, user_key: str) -> dict[str, mpf]:
+    """Derive V3 parameters: SHA-512(P) XOR 512-bit K, then 12-bit + 8-bit mix.
+
+    Paper algorithm (ch03.tex): split the 512-bit mixed stream into 40 x 12-bit
+    blocks plus 4 x 8-bit modulators, fold five inward-symmetric windows, and
+    modulate ``|sin(4*pi*V*e_i*e_j)|``.
+    """
+    digest = hashlib.sha512(plaintext_bytes).digest()
+    image_hash_bits = np.unpackbits(np.frombuffer(digest, dtype=np.uint8))
+    hook = _IMAGE_HASH_HOOK.get()
+    if hook is not None:
+        hook(image_hash_bits.copy())
+
+    digest_bits = "".join(f"{byte:08b}" for byte in digest)
+    mixed_bits = "".join(
+        "0" if left == right else "1"
+        for left, right in zip(digest_bits, user_key)
+    )
+    blocks_12 = [int(mixed_bits[offset:offset + 12], 2) for offset in range(0, 480, 12)]
+    blocks_8 = [int(mixed_bits[offset:offset + 8], 2) for offset in range(480, 512, 8)]
+
+    half = mp.mpf("0.5")
+    two_five_six = mp.mpf(256)
+    tilde = [(mp.mpf(block) + half) / two_five_six for block in blocks_8]
+    denom = mp.mpf(2) * mp.mpf(4096)
+
+    values: list[mpf] = []
+    for index in range(1, 6):
+        head = _xor_48_bit_blocks(
+            [
+                blocks_12[4 * index - 4],
+                blocks_12[4 * index - 3],
+                blocks_12[4 * index - 2],
+                blocks_12[4 * index - 1],
+            ]
+        )
+        tail = _xor_48_bit_blocks(
+            [
+                blocks_12[40 - 4 * index],
+                blocks_12[40 - 4 * index + 1],
+                blocks_12[40 - 4 * index + 2],
+                blocks_12[40 - 4 * index + 3],
+            ]
+        )
+        values.append((mp.mpf(head) + mp.mpf(tail)) / denom)
+
+    def folded(value, left_modulator, right_modulator, modulus):
+        argument = value * left_modulator * right_modulator
+        return mp.fmod(
+            mp.fabs(mp.sin(4 * mp.pi * argument)) * mp.power(10, 6),
+            modulus,
+        )
+
+    ten = mp.mpf(10)
+    one = mp.mpf(1)
+    return {
+        "mu": folded(values[0], tilde[0], tilde[3], ten),
+        "v": folded(values[1], tilde[1], tilde[2], ten),
+        "alpha": folded(values[2], tilde[0], tilde[1], ten),
+        "beta": folded(values[3], tilde[2], tilde[3], ten),
+        "x": folded(values[4], tilde[0], tilde[2], one),
+    }
+
+
+def keystream_generation_v3(
+    L: int,
+    plaintext_image: str | Path | np.ndarray,
+    user_key: str | None = None,
+    *,
+    warmup: int = 50,
+    use_high_precision: bool = False,
+) -> dict[str, float | np.ndarray]:
+    """Generate the SHA-512/V3 chaotic parameters and keystream from ch03.tex.
+
+    ``user_key`` is a 512-bit binary string. SHA-512(P) is XOR-mixed with the
+    external key, split into 40 x 12-bit blocks plus 4 x 8-bit modulators, and
+    folded into ``mu``, ``v``, ``alpha``, ``beta``, and ``x0``.
+    """
+    if not isinstance(L, (int, np.integer)) or L <= 0:
+        raise ValueError("L must be a positive integer")
+    _validate_iteration_inputs(int(L), warmup)
+    normalized_user_key = normalize_user_key_v3(user_key)
+    plaintext_bytes = _plaintext_bytes(plaintext_image)
+    params = _derive_chaos_parameters_v3(plaintext_bytes, normalized_user_key)
+
+    if use_high_precision:
+        sequence = _iterate_keystream_mp(
+            x0=params["x"],
+            mu=params["mu"],
+            v=params["v"],
+            L=int(L),
+            warmup=warmup,
+        )
+    else:
+        sequence = _iterate_keystream_float(
+            x0=float(params["x"]),
+            mu=float(params["mu"]),
+            v=float(params["v"]),
+            L=int(L),
+            warmup=warmup,
+        )
+
+    result = _finalize_output(params, sequence)
+    result["x0"] = float(params["x"])
+    return result
+
+
+keystream_generation_V3 = keystream_generation_v3
 
 
 # --- 实验验证 ---

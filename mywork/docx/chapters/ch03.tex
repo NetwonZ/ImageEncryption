@@ -2,66 +2,77 @@
 
 \subsection{密钥设计与混沌序列生成}
 
-为提升密码系统的抗攻击性能，抵御选择明文攻击（CPA）与已知明文攻击（KPA），本方案设计了一种基于明文图像与外部密钥双驱动的参数及密钥流生成机制。系统利用尺寸为 $M \times N$ 的明文图像 $P$ 通过 SHA-384 哈希函数生成 384 位内部密钥 $K$，并与通信双方预先商定的 384 位外部密钥 $E$ 共同作用。将 $K$ 与 $E$ 分别均分为 8 个 48 位的子块：$K = [k_1, k_2, \dots, k_8]$ 与 $E = [e_1, e_2, \dots, e_8]$，其中每个子块的取值范围为 $[0, 2^{48}-1]$。
+为了有效抵御选择明文攻击（CPA）与已知明文攻击（KPA），本方案设计了一种基于 SHA-512 哈希与 512 位外部密钥双重驱动的混沌参数派生机制。该机制通过明文哈希与外部密钥的全域异或、细粒度子块划分、双向对称折叠以及交叉非线性调制，实现对明文和密钥的高度敏感性。
 
-为消除各子块间的局部相关性，系统采用双向滑动窗口结构进行交叉扰动：当滑动窗口在内部密钥 $K$ 上正向滑动时，在外部密钥 $E$ 上逆向滑动。五个中间归一化变量 $V_i \in [0, 1)$（$i = 1, 2, \dots, 5$）的计算公式如下：
+设尺寸为 $M \times N$ 的明文图像为 $P$。首先通过安全哈希算法 SHA-512 提取明文图像的特征摘要，生成 512 位的内部哈希序列 $I = \text{SHA-512}(P)$；随后与通信双方预先商定的 512 位外部用户密钥 $K$ 进行逐位异或，得到 512 位的全局混合密钥序列 $U$：
+\begin{equation}
+    U = I \oplus K.
+\end{equation}
+
+为了消除单一比特扰动的局部性，系统将 512 位的混合序列 $U$ 分割为主混合段与交叉调制段：
+\begin{enumerate}
+    \item 前 480 位作为主混合序列，等分为 40 个 12 位的子块，记为 $[u_1, u_2, \dots, u_{40}]$，其中各子块的整数取值范围为 $[0, 2^{12}-1]$；
+    \item 剩余的 32 位划分为 4 个 8 位的动态调制因子，记为 $[e_1, e_2, e_3, e_4]$，每个调制因子的整数取值范围为 $[0, 2^8-1]$。
+\end{enumerate}
+
+系统采用双端向内对称收缩的滑动结构，将全部 40 个子块完全覆盖并融合成 5 个中间归一化变量 $V_i \in [0, 1)$（$i = 1, 2, \dots, 5$）。每一组变量由序列前端的 4 个连续子块与后端的 4 个连续子块分别异或后算术加和生成：
+\begin{equation}
+    V_i = \frac{\left( \bigoplus_{j=1}^4 u_{4(i-1)+j} \right) + \left( \bigoplus_{j=1}^4 u_{40 - 4i + j} \right)}{2 \times 4096}, \quad i \in \{1, 2, 3, 4, 5\},
+    \label{eq:Vi_v3}
+\end{equation}
+式中 $\oplus$ 表示按位异或运算。由于每个 12 位子块经异或后的最大取值为 $4095 < 4096$，两项算术和严格小于 $2 \times 4096 = 8192$，从而保证了 $V_i \in [0, 1)$。
+
+随后，将归一化变量 $V_i$ 与调制因子 $e_k$ 进行正弦非线性折叠。为打破周期谐振，利用调制因子两两组合产生动态相位扰动，派生出混沌系统的控制参数 $(\mu, \nu, \alpha, \beta)$ 及初始状态 $x_0$：
 \begin{equation}
 \left\{
 \begin{aligned}
-    V_1 &= \frac{(k_1 \oplus k_2 \oplus k_3 \oplus k_4) + (e_8 \oplus e_7 \oplus e_6 \oplus e_5)}{2 \times 2^{48}}, \\
-    V_2 &= \frac{(k_2 \oplus k_3 \oplus k_4 \oplus k_5) + (e_7 \oplus e_6 \oplus e_5 \oplus e_4)}{2 \times 2^{48}}, \\
-    V_3 &= \frac{(k_3 \oplus k_4 \oplus k_5 \oplus k_6) + (e_6 \oplus e_5 \oplus e_4 \oplus e_3)}{2 \times 2^{48}}, \\
-    V_4 &= \frac{(k_4 \oplus k_5 \oplus k_6 \oplus k_7) + (e_5 \oplus e_4 \oplus e_3 \oplus e_2)}{2 \times 2^{48}}, \\
-    V_5 &= \frac{(k_5 \oplus k_6 \oplus k_7 \oplus k_8) + (e_4 \oplus e_3 \oplus e_2 \oplus e_1)}{2 \times 2^{48}},
+    \mu   &= \bmod\left( \left| \sin\left( 4\pi \cdot V_1 \cdot \tilde{e}_1 \cdot \tilde{e}_4 \right) \right| \times 10^6,\; 10 \right), \\
+    \nu   &= \bmod\left( \left| \sin\left( 4\pi \cdot V_2 \cdot \tilde{e}_2 \cdot \tilde{e}_3 \right) \right| \times 10^6,\; 10 \right), \\
+    \alpha &= \bmod\left( \left| \sin\left( 4\pi \cdot V_3 \cdot \tilde{e}_1 \cdot \tilde{e}_2 \right) \right| \times 10^6,\; 10 \right), \\
+    \beta  &= \bmod\left( \left| \sin\left( 4\pi \cdot V_4 \cdot \tilde{e}_3 \cdot \tilde{e}_4 \right) \right| \times 10^6,\; 10 \right), \\
+    x_0    &= \bmod\left( \left| \sin\left( 4\pi \cdot V_5 \cdot \tilde{e}_1 \cdot \tilde{e}_3 \right) \right| \times 10^6,\; 1 \right),
 \end{aligned}
 \right.
-\label{eq:Vi}
+\label{eq:params_v3}
 \end{equation}
-式中 $\oplus$ 表示按位异或运算。由于每个 4 块异或项的最大取值为 $2^{48}-1$，分子的算术加和严格小于 $2 \times 2^{48}$，因此式~(\ref{eq:Vi})保证了各 $V_i \in [0, 1)$。随后，利用正弦非线性折叠消除线性关系，提取出系统的动力学控制参数 $(\mu, v, \alpha, \beta)$ 及混沌初值 $x_0$：
-\begin{equation}
-\left\{
-\begin{aligned}
-    \mu &= \bmod\left( |\sin(4\pi \cdot V_1)| \times 10^6,\; 10 \right), \\
-    v &= \bmod\left( |\sin(4\pi \cdot V_2)| \times 10^6,\; 10 \right), \\
-    \alpha &= \bmod\left( |\sin(4\pi \cdot V_3)| \times 10^6,\; 10 \right), \\
-    \beta &= \bmod\left( |\sin(4\pi \cdot V_4)| \times 10^6,\; 10 \right), \\
-    x_0 &= \bmod\left( |\sin(4\pi \cdot V_5)| \times 10^6,\; 1 \right),
-\end{aligned}
-\right.
-\end{equation}
-其中 $\bmod(z, m) = z - m\lfloor z/m \rfloor$ 表示对模 $m$ 取余（保留小数部分），故 $\mu, v, \alpha, \beta$ 为连续区间 $[0, 10)$ 内的实数而非整数，覆盖更广泛的混沌动力学区域；初值 $x_0 \in (0, 1)$。将派生得到的初值 $x_0$ 和参数输入离散混沌系统：
-\begin{equation}
-    x_{t+1} = \left| \sin\left( (5 + 3\mu) \left( 1 - v \cdot x_t \cdot \sin\left( 15\pi x_t (1 - x_t) \right) \right) \right) \right|.
-\end{equation}
-为消除初始暂态效应，系统迭代前 $N_0$ 次被舍弃，继续收集后续 $L = M \times N$ 次迭代输出。由于每次调用时 $x_0$ 与 $(\mu, v)$ 均由明文与外部密钥重新派生，得到的伪随机密钥流序列 $X = \{x_1, x_2, \dots, x_L\}$ 对明文与密钥均敏感。该算法的完整执行过程如算法 1 所示。
+其中 $\bmod(z, m) = z - m\lfloor z/m \rfloor$ 为实数域连续取模运算；$\tilde{e}_k = (e_k + 0.5) / 256$ 为规避代数整数周期锁死而引入的调制系数归一化映射。最终，将所得初值 $x_0 \in (0, 1)$ 与参数代入混沌动力学系统，丢弃前 $N_0$ 次暂态迭代后生成加密所需的伪随机密钥流 $X$。
+
 
 \begin{algorithm}[htbp]
-\caption{Parameters and Keystream Generation}
-\label{alg:keystream}
+\caption{SHA-512 and External Key Driven Keystream Generation}
+\label{alg:keystream_complete}
 \begin{algorithmic}[1]
-\REQUIRE Plaintext image $P$ of size $M \times N$, 384-bit external secret key $E$, transient iteration count $N_0$, keystream length $L$.
-\ENSURE Chaotic parameters $(\mu, v, \alpha, \beta)$, initial state $x_0$, pseudorandom keystream $X$.
+\REQUIRE Plaintext image $P$ of size $M \times N$, 512-bit external key $K$, transient warmup count $N_0$, keystream length $L = M \times N$.
+\ENSURE Dynamic parameters $(\mu, \nu, \alpha, \beta)$, initial state $x_0$, keystream sequence $X$.
 
-\STATE $H \leftarrow \text{SHA-384}(P)$;
-\STATE Split $H$ into 8 blocks of 48-bit integers: $K = [k_1, k_2, \dots, k_8]$;
-\STATE Split $E$ into 8 blocks of 48-bit integers: $E = [e_1, e_2, \dots, e_8]$;
-\FOR{$i = 1$ \TO $5$}
-    \STATE $S_K \leftarrow k_i \oplus k_{i+1} \oplus k_{i+2} \oplus k_{i+3}$;
-    \STATE $S_E \leftarrow e_{9-i} \oplus e_{8-i} \oplus e_{7-i} \oplus e_{6-i}$;
-    \STATE $V_i \leftarrow \frac{S_K + S_E}{2 \times 2^{48}}$;
+\STATE $I \leftarrow \text{SHA-512}(P)$; \COMMENT{Generate 512-bit hash digest}
+\STATE $W \leftarrow I \oplus K$; \COMMENT{Global bitwise XOR blending}
+\STATE Split the first 480 bits of $W$ into 40 blocks of 12-bit integers: $[a_1, a_2, \dots, a_{40}]$;
+\STATE Split the last 32 bits of $W$ into 4 blocks of 8-bit integers: $[b_1, b_2, b_3, b_4]$;
+
+\FOR{$k = 1$ \TO $4$}
+    \STATE $\tilde{b}_k \leftarrow (b_k + 0.5) / 256$; \COMMENT{Continuous modulation normalization}
 \ENDFOR
-\STATE $\mu \leftarrow \bmod\left( |\sin(4\pi \cdot V_1)| \times 10^6,\; 10 \right)$;
-\STATE $v \leftarrow \bmod\left( |\sin(4\pi \cdot V_2)| \times 10^6,\; 10 \right)$;
-\STATE $\alpha \leftarrow \bmod\left( |\sin(4\pi \cdot V_3)| \times 10^6,\; 10 \right)$;
-\STATE $\beta \leftarrow \bmod\left( |\sin(4\pi \cdot V_4)| \times 10^6,\; 10 \right)$;
-\STATE $x_0 \leftarrow \bmod\left( |\sin(4\pi \cdot V_5)| \times 10^6,\; 1 \right)$;
+
+\FOR{$i = 1$ \TO $5$}
+    \STATE $S_{\text{head}} \leftarrow a_{4i-3} \oplus a_{4i-2} \oplus a_{4i-1} \oplus a_{4i}$;
+    \STATE $S_{\text{tail}} \leftarrow a_{40-4i+1} \oplus a_{40-4i+2} \oplus a_{40-4i+3} \oplus a_{40-4i+4}$;
+    \STATE $V_i \leftarrow \frac{S_{\text{head}} + S_{\text{tail}}}{2 \times 4096}$;
+\ENDFOR
+
+\STATE $\mu \leftarrow \bmod\left( \left| \sin(4\pi \cdot V_1 \cdot \tilde{b}_1 \cdot \tilde{b}_4) \right| \times 10^6,\; 10 \right)$;
+\STATE $\nu \leftarrow \bmod\left( \left| \sin(4\pi \cdot V_2 \cdot \tilde{b}_2 \cdot \tilde{b}_3) \right| \times 10^6,\; 10 \right)$;
+\STATE $\alpha \leftarrow \bmod\left( \left| \sin(4\pi \cdot V_3 \cdot \tilde{b}_1 \cdot \tilde{b}_2) \right| \times 10^6,\; 10 \right)$;
+\STATE $\beta \leftarrow \bmod\left( \left| \sin(4\pi \cdot V_4 \cdot \tilde{b}_3 \cdot \tilde{b}_4) \right| \times 10^6,\; 10 \right)$;
+\STATE $x_0 \leftarrow \bmod\left( \left| \sin(4\pi \cdot V_5 \cdot \tilde{b}_1 \cdot \tilde{b}_3) \right| \times 10^6,\; 1 \right)$;
+
 \STATE $x \leftarrow x_0$;
 \FOR{$t = 1$ \TO $N_0 + L$}
-    \STATE $x \leftarrow \left| \sin\left( (5 + 3\mu) \left( 1 - v \cdot x \cdot \sin(15\pi x (1 - x)) \right) \right) \right|$;
+    \STATE $x \leftarrow \left| \sin\left( (5 + 3\mu) \left( 1 - \nu \cdot x \cdot \sin(15\pi x (1 - x)) \right) \right) \right|$;
     \IF{$t > N_0$}
         \STATE $X[t - N_0] \leftarrow x$;
     \ENDIF
 \ENDFOR
-\RETURN $\mu, v, \alpha, \beta, x_0, X$;
+\RETURN $\mu, \nu, \alpha, \beta, x_0, X$;
 \end{algorithmic}
 \end{algorithm}

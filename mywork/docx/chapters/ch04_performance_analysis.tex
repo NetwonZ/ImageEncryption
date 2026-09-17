@@ -6,11 +6,19 @@
 \subsection{仿真结果}
 从USC-SIPI图像数据库中选择了3张$256\times256$、一张$512\times512$和一张$128\times128$的图像进行仿真测试。图[fig]展示了采用所提加密算法得到的加密图像和解密图像。可以看出，加密图像为不规则噪声信号图像，难以从中获取原始图像的任何信息；解密图像则与原始图像一致。
 
-\subsection{秘钥空间分析}
+\subsection{秘钥安全性分析}
 所有可能秘钥的总数称为秘钥空间。秘钥空间越大，算法的安全性越高。Alvarez[ref]指出,安全的加密算法的秘钥空间至少应为$2^{100}$，且加密算法的秘钥空间越大，其抵抗暴力破解的能力就越强。本文所提加密算法可以是384位哈希值H，或是五个参数$\{\mu,v,\alpha,\beta,A_0\}$。(1)若秘钥为384位哈希值H，则秘钥空间为$2^{384}$；(2)若秘钥为五个参数$\{\mu,v,\alpha,\beta,A_0\}$，在计算机精度为$10^{-15}$的情况下，则秘钥空间为$10^{5 \times 15} = 10^{75} > 2^{249}$。考虑到攻击者可能通过暴力破解或其他方式获取秘钥，最终秘钥空间应为两者的最小值，即$10^{75} > 2^{249}$，因此本文所提加密算法的秘钥空间足够大，能够抵抗暴力破解攻击。
 
+安全的加密算法应对秘钥敏感，即使秘钥发生微小变化，也无法正确解密出原始图像。为了验证所提加密算法的秘钥敏感性，我们引入位变化率(NBCR)来量化秘钥的敏感性，其定义式见式~\eqref{eq:nbcr}。
+\begin{equation}
+    NBCR(f_1, f_2) = \frac{\mathrm{Hm}(f_1, f_2)}{len} \times 100\%
+    \label{eq:nbcr}
+\end{equation}
+其中 $\text{len}$ 表示 $f_1$ 或 $f_2$ 的总长度，$Hm\,(f_1, f_2)$ 表示两序列之间的汉明距离。如果 $f_1$ 和 $f_2$ 彼此独立，则由它们计算的 NBCR 接近 50\%。使用Lena作为测试图像，在原始密$K$上改变一位得到新的密钥$K'$。在加密加密阶段分别使用两把秘钥得到两张不同的密文图像$C$和$C'$，然后计算$NBCR(C,C')$。解密阶段使用两把秘钥分别对密文图像$C$进行解密，得到明文图像$P$和$P'$,并计算$NBCR(P,P')$。图[fig]展示了在不同秘钥下的加密和解密结果。可以看出，$NBCR(C,C')$和$NBCR(P,P')$均接近于50\%，说明所提加密算法对秘钥具有较高的敏感性，能够有效抵抗秘钥猜测攻击。
+
+
 \subsection{像素分布分析}
-一张像素分布均匀的图像可有效抵抗统计分析攻击，通过直方图能够直观的反映出图片的像素分布情况。一幅视觉上有意义的图像通常呈现出不均匀的像素分布，其直方图有明显的峰谷特征。而一幅加密后的图像应呈现出均匀的像素分布，其直方图应接近于均匀分布。图[fig]展示了原始图像和加密图像的直方图对比。可以看出，加密图像的直方图呈现出较为均匀的分布，各区间高度一致。此外我们引入了直方图方差(HV)，定义式见~\eqref{eq:hvar},以及$\chi^2$,定义式见~\eqref{eq:chi2},用以进一步分析加密图像的像素分布情况。
+一张像素分布均匀的图像可有效抵抗统计分析攻击，通过直方图能够直观的反映出图片的像素分布情况。一幅视觉上有意义的图像通常呈现出不均匀的像素分布，其直方图有明显的峰谷特征。而一幅加密后的图像应呈现出均匀的像素分布，其直方图应接近于均匀分布。图[fig]展示了原始图像和加密图像的直方图对比。可以看出，加密图像的直方图呈现出较为均匀的分布，各区间高度一致。此外我们引入了直方图方差(HV)，定义式见式~\eqref{eq:hvar},以及$\chi^2$,定义式见式~\eqref{eq:chi2},用以进一步分析加密图像的像素分布情况。
 \begin{equation}
 \label{eq:hvar}
 \mathrm{Hvar}(X) = \frac{1}{n^2} \sum_{i=1}^{n} \sum_{j=1}^{n} \frac{(z_i - z_j)^2}{2}
@@ -23,7 +31,7 @@
 \end{equation}
 其中，$f_0 = (M \times N) / 256$ 表示理想均匀分布下像素值的期望出现频率（$M \times N$ 为图像尺寸），$f_i$ 为灰度值 $i$ 的实际出现频数。当显著性水平 $\alpha$ 设为 $0.005$（自由度为 $255$）时，卡方分布的临界阈值为 $293.24783$。
 
-与直方图相比，$HV$ 能更准确直观地反映像素分布的均匀性，表~\ref{tab:hv_comparison}展示了我们算法与其他算法加密前后像素分布的对比；若密文图像计算所得的 $\chi^2$ 均小于 $293.24783$，则说明密文图像通过了显著性检验，像素值呈现出高度均匀的分布。
+与直方图相比，$HV$ 能更准确直观地反映像素分布的均匀性，表~\ref{tab:hv_comparison}展示了我们算法与其他算法加密前后像素分布的对比。$\chi^2$检验能定理分析密文图像的像素分别，当结果小于显著性水平$\alpha=0.05$下的临界值293.25时，则认为图像通过了$\chi^2$校验。表~\ref{tab:chi_square}列出了密文图像的 $\chi^2$ 检验结果,显示所有的密文图像的每个通道均通过的 $\chi^2$ 检验，说明加密图像的像素分布均匀，具有良好的安全性。
 
 \begin{table}[htbp]
 \centering
@@ -66,3 +74,81 @@ img5.png & 266.85 & 257.83 & 248.88 & 257.86 & Passed \\
 \end{tabular}
 \end{table}
 
+
+
+
+\subsection{相关性分析}
+明文图像的每个像素通常与其相邻像素具有较强的相关性，而一个优秀的加密算法应能有效地破坏这种相关性。为了验证所提加密算法的有效性，我们以Lena和Peppers图像为例，随机选取10000对相邻像素点，来进行分析。图[fig]展示了两幅图像的三个通道在水平，垂直和对角线方向上的相关性，可以看出，明文图像的相邻像素点高度集中，具有较高的相关性，而密文图像消除了各通道上相邻像素点的相关性。
+
+相关性系数能量化相邻像素点之间的相关性，其通过式~\eqref{Correlation}计算。结果如表~\ref{tab:correlation_coefficients}所示。密文图像在三个通道上的相关性系数接近于0，说明所提加密算法有效地破坏了明文图像相邻像素点之间的相关性，阻止攻击者利用相关性进行攻击。
+
+\begin{equation}
+\label{Correlation}
+\left\{
+\begin{aligned}
+E(x) &= \frac{1}{N} \sum_{i=1}^{N} x_i \\[6pt]
+D(x) &= \frac{1}{N} \sum_{i=1}^{N} (x_i - E(x))^2 \\[6pt]
+\mathit{corr}(x,y) &= \frac{E\big((x - E(x))(y - E(y))\big)}{\sqrt{D(x)} \sqrt{D(y)}}
+\end{aligned}
+\right.
+\end{equation}
+其中N为图像的像素总数，$x_i$和$y_i$分别为相邻像素点的像素值。
+
+
+\begin{table*}[htbp]
+\captionsetup{singlelinecheck=false, justification=raggedright}
+\caption{Correlation coefficients of adjacent pixels in plain and cipher images.}
+\label{tab:correlation_coefficients}
+\small
+\setlength{\tabcolsep}{3.8pt} % 压缩列间距以保证不溢出
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}llllllllll@{}}
+\toprule
+Images & \multicolumn{3}{l}{Horizontal} & \multicolumn{3}{l}{Vertical} & \multicolumn{3}{l}{Diagonal} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+ & R & G & B & R & G & B & R & G & B \\
+\midrule
+img1.png & $-$0.00003 & 0.00024 & 0.00093 & $-$0.00142 & $-$0.00050 & $-$0.00046 & 0.00051 & $-$0.00003 & $-$0.00140 \\
+img2.png & $-$0.00081 & $-$0.00030 & 0.00117 & $-$0.00034 & $-$0.00178 & 0.00087 & 0.00255 & 0.00117 & 0.00168 \\
+img3.png & 0.00144 & $-$0.00133 & 0.00014 & $-$0.00290 & $-$0.00077 & 0.00078 & 0.00142 & 0.00048 & $-$0.00312 \\
+img4.png & $-$0.00281 & 0.00156 & 0.00155 & 0.00122 & 0.00197 & $-$0.00212 & $-$0.00281 & 0.00141 & $-$0.00052 \\
+img5.png & $-$0.00095 & $-$0.00076 & $-$0.00070 & $-$0.00072 & $-$0.00116 & $-$0.00430 & $-$0.00284 & 0.00144 & 0.00040 \\
+\bottomrule
+\end{tabular*}
+\end{table*}
+
+\subsection{信息熵分析}
+信息熵是一种衡量图像混淆程度的重要指标，其定义式见式~\eqref{eq:entropy}。
+\begin{equation}
+\label{eq:entropy}
+H(X) = - \sum_{i=0}^{255} p(x_i) \
+log_2 p(x_i)
+\end{equation}
+其中$p(x_i)$表示像素值为$x_i$在图像中出现的概率。对于一幅灰度图像，其像素值的范围为$[0,255]$，若图像的像素分布均匀，则其信息熵接近于8。表[tab]列出了多张测试图像加密前后的信息熵结果。可以看出，所提加密算法在所有测试图像上的信息熵均接近于8，说明加密图像具有较高的混淆性和安全性。
+
+
+\begin{table*}[htbp]
+\captionsetup{singlelinecheck=false, justification=raggedright}
+\caption{Information entropy.}
+\label{tab:entropy}
+\begin{tabular}{lccccc}
+\toprule
+Images & img1.png & img2.png & img3.png & img4.png & img5.png \\
+\midrule
+\textit{IE} of plaintexts  & 7.76217 & 7.76243 & 7.75019 & 7.66982 & 7.39830 \\
+\textit{IE} of ciphertexts & 7.99974 & 7.99972 & 7.99977 & 7.99975 & 7.99974 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+
+\subsection{差分攻击分析}
+差分攻击是密码分析中常用的一种攻击方法，其通过分析明文和密文之间的差异来推测加密算法的结构和秘钥，该方法使攻击者有可能在无需获取加密密钥的情况下,从密文图像中恢复明文图像。平均像素变化率（NPCR）和统一平均强度误差（UACI），通常用于衡量系统对差分攻击的抵抗能力。其定义式见式~\eqref{eq:npcr}和式~\eqref{eq:uaci}。
+\begin{equation}
+\label{eq:npcr}
+NPCR(C_1,C_2) = \frac{\sum_{i,j} D(i,j)}{M \times N} \times 100\%
+\end{equation}
+\begin{equation}
+\label{eq:uaci}
+UACI(C_1,C_2) = \frac{1}{M \times N} \sum_{i,j} \frac{|C_1(i,j) - C_2(i,j)|}{255} \times 100\%
+\end{equation}
+其中$D(i,j)$表示在位置$(i,j)$处，两幅图像之间的像素值差异。$C_1(i,j)$和$C_2(i,j)$分别表示两幅密文图像在位置$(i,j)$处的像素值。如果$C_1$和$C_2$为不同的密文图像，则他们的NPCR与UACI理论值分别是99.6094\%和33.4635\%[ref]。表[tab]列出了不同尺寸图像的NPCR和UACI测试结果。可以看出，所提加密算法在所有测试图像上的NPCR和UACI均接近于理想值，说明该算法对差分攻击具有较强的抵抗能力。

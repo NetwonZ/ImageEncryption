@@ -1,11 +1,11 @@
 from .Encryption import Encrypter
 from .SalomonCouplingCML import SalomoncouplingCML 
-from .KeyStream import keystream_generation_v2, keystream_generation, DEFAULT_USER_KEY_BITS_V2,DEFAULT_USER_KEY_BITS
+from .KeyStream import keystream_generation_v3, keystream_generation, DEFAULT_USER_KEY_BITS_V3, DEFAULT_USER_KEY_BITS
 import numpy as np
 
 L = 512*512
-user_key = DEFAULT_USER_KEY_BITS_V2
-key = keystream_generation_v2(L, "C:\\ImageEncryption\\images\\img3.png", user_key)
+user_key = DEFAULT_USER_KEY_BITS_V3
+key = keystream_generation_v3(L, "C:\\ImageEncryption\\images\\img3.png", user_key)
 
 params = {
     "mu": float(key["mu"]),
